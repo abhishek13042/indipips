@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String    @id @default(uuid())
+  fullName        String
+  email           String    @unique
+  phone           String    @unique
+  passwordHash    String
+  role            Role      @default(TRADER)
+  kycStatus       KycStatus @default(PENDING)
+  aadhaarVerified Boolean   @default(false)
+  panNumber       String?
+  bankAccount     String?
+  bankIfsc        String?
+  referralCode    String    @unique
+  referredBy      String?
+  walletBalance   BigInt    @default(0)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  challenges Challenge[]
+  payments   Payment[]
+  payouts    Payout[]
+}
+
+model Plan {
+  id             String   @id @default(uuid())
+  name           String
+  accountSize    BigInt
+  challengeFee   BigInt
+  profitTarget   Float
+  dailyLossLimit Float
+  maxDrawdown    Float
+  minTradingDays Int
+  maxTradingDays Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  challenges Challenge[]
+}
+
+model Challenge {
+  id              String          @id @default(uuid())
+  userId          String
+  planId          String
+  accountSize     BigInt
+  currentBalance  BigInt
+  peakBalance     BigInt
+  totalPnl        BigInt          @default(0)
+  dailyPnl        BigInt          @default(0)
+  daysTraded      Int             @default(0)
+  status          ChallengeStatus @default(ACTIVE)
+  failReason      String?
+  startDate       DateTime
+  expiryDate      DateTime
+  passedAt        DateTime?
+  brokerConnected Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id])
+  plan    Plan     @relation(fields: [planId], references: [id])
+  trades  Trade[]
+  payouts Payout[]
+}
+
+model Trade {
+  id            String    @id @default(uuid())
+  challengeId   String
+  userId        String
+  instrument    String
+  tradeType     TradeType
+  quantity      Int
+  entryPrice    BigInt
+  exitPrice     BigInt?
+  pnl           BigInt    @default(0)
+  tradeDate     DateTime
+  entryTime     DateTime
+  exitTime      DateTime?
+  brokerTradeId String?   @unique
+  createdAt     DateTime  @default(now())
+
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  challengeId       String?
+  amount            BigInt
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  status            PaymentStatus @default(PENDING)
+  gstAmount         BigInt        @default(0)
+  createdAt         DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Payout {
+  id              String       @id @default(uuid())
+  userId          String
+  challengeId     String
+  amountRequested BigInt
+  amountAfterTds  BigInt
+  profitSplit     Float
+  status          PayoutStatus @default(PENDING)
+  adminId         String?
+  bankReference   String?
+  requestedAt     DateTime     @default(now())
+  processedAt     DateTime?
+
+  user      User      @relation(fields: [userId], references: [id])
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+}
+
+enum Role {
+  TRADER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ChallengeStatus {
+  ACTIVE
+  PASSED
+  FAILED
+  EXPIRED
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  TRANSFERRED
+}
