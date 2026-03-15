@@ -31,17 +31,20 @@ model User {
 }
 
 model Plan {
-  id             String   @id @default(uuid())
-  name           String
-  accountSize    BigInt
-  challengeFee   BigInt
-  profitTarget   Float
-  dailyLossLimit Float
-  maxDrawdown    Float
-  minTradingDays Int
-  maxTradingDays Int
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  id              String        @id @default(uuid())
+  name            String
+  challengeType   ChallengeType @default(ONE_STEP)
+  accountSize     BigInt
+  challengeFee    BigInt
+  profitTarget    Float         @default(0)
+  phase2Target    Float         @default(0)
+  dailyLossLimit  Float
+  maxDrawdown     Float
+  minTradingDays  Int
+  maxTradingDays  Int
+  profitSplit     Float         @default(80)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
 
   challenges Challenge[]
 }
@@ -56,6 +59,7 @@ model Challenge {
   totalPnl        BigInt          @default(0)
   dailyPnl        BigInt          @default(0)
   daysTraded      Int             @default(0)
+  phase           Int             @default(1)
   status          ChallengeStatus @default(ACTIVE)
   failReason      String?
   startDate       DateTime
@@ -131,6 +135,12 @@ enum KycStatus {
   PENDING
   VERIFIED
   REJECTED
+}
+
+enum ChallengeType {
+  ZERO_STEP
+  ONE_STEP
+  TWO_STEP
 }
 
 enum ChallengeStatus {
