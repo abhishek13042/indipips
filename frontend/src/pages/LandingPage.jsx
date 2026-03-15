@@ -2,6 +2,8 @@ import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import HowItWorks from '../components/HowItWorks'
 import Pricing from '../components/Pricing'
+import WhyUs from '../components/WhyUs'
+import FAQ from '../components/FAQ'
 
 function LandingPage() {
   return (
@@ -10,6 +12,8 @@ function LandingPage() {
       <Hero />
       <HowItWorks />
       <Pricing />
+      <WhyUs />
+      <FAQ />
     </div>
   )
 }
