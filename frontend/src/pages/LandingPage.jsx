@@ -4,6 +4,7 @@ import HowItWorks from '../components/HowItWorks'
 import Pricing from '../components/Pricing'
 import WhyUs from '../components/WhyUs'
 import FAQ from '../components/FAQ'
+import Footer from '../components/Footer'
 
 function LandingPage() {
   return (
@@ -14,6 +15,7 @@ function LandingPage() {
       <Pricing />
       <WhyUs />
       <FAQ />
+      <Footer />
     </div>
   )
 }
