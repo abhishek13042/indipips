@@ -1,10 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const { PrismaPg } = require('@prisma/adapter-pg');
-
-const adapter = new PrismaPg({
-  connectionString: 'postgresql://postgres:indipips123@localhost:5432/indipips_db'
-});
-const prisma = new PrismaClient({ adapter });
+const prisma = require('../utils/prisma');
 
 const seedPlans = async (req, res) => {
   try {

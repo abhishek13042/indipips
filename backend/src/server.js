@@ -8,9 +8,14 @@ const authRoutes = require('./routes/auth.routes');
 const planRoutes = require('./routes/plans.routes');
 const userRoutes = require('./routes/user.routes');
 const challengeRoutes = require('./routes/challenge.routes');
+const paymentRoutes = require('./routes/payment.routes');
+const { handleWebhook } = require('./controllers/payment.controller');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// ── Stripe Webhook (MUST be before express.json) ────
+app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleWebhook);
 
 // ── Middleware ──────────────────────────────────────
 app.use(helmet());
@@ -24,6 +29,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/plans', planRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/challenges', challengeRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // ── Health Check ────────────────────────────────────
 app.get('/', (req, res) => {
@@ -57,6 +63,7 @@ app.listen(PORT, () => {
   console.log(`🌐 http://localhost:${PORT}`);
   console.log(`📅 ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`);
   console.log(`🔐 Auth routes: http://localhost:${PORT}/api/v1/auth`);
+  console.log(`💳 Payment routes: http://localhost:${PORT}/api/v1/payments`);
 });
 
 module.exports = app;

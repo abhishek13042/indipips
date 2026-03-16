@@ -16,6 +16,8 @@ function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    localStorage.removeItem('accessToken')
+    localStorage.removeItem('user')
     try {
       const res = await api.post('/auth/login', form)
       localStorage.setItem('accessToken', res.data.data.tokens.accessToken)
