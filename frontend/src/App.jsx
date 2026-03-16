@@ -6,7 +6,19 @@ import DashboardPage from './pages/DashboardPage'
 import BuyChallengePage from './pages/BuyChallengePage'
 import ProtectedRoute from './ProtectedRoute'
 
+import { useAuth } from './context/AuthContext'
+
 function App() {
+  const { loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#6b7280', fontWeight: 600 }}>Loading session...</p>
+      </div>
+    )
+  }
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />

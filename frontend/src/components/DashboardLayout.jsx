@@ -1,12 +1,14 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 
+import { useAuth } from '../context/AuthContext'
+
 function DashboardLayout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { logout } = useAuth()
 
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('user')
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 

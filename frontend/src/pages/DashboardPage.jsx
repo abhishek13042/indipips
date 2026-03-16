@@ -3,28 +3,29 @@ import { useNavigate } from 'react-router-dom'
 import DashboardLayout from '../components/DashboardLayout'
 import api from '../api'
 
+import { useAuth } from '../context/AuthContext'
+
 function DashboardPage() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(null)
+  const { user, setUser } = useAuth()
   const [challenges, setChallenges] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [profileRes, challengesRes] = await Promise.all([
-          api.get('/users/profile'),
-          api.get('/challenges'),
-        ])
-        setUser(profileRes.data.data)
+        // Fetch only challenges as user profile should already be in context from App initialization
+        const challengesRes = await api.get('/challenges')
         setChallenges(challengesRes.data.data)
-        setLoading(false)
       } catch (err) {
-        if (err.response?.status === 401) {
+        console.error("Dashboard page API error:", err);
+        if (err.response?.status === 401 || err.response?.status === 403) {
           localStorage.removeItem('accessToken')
           localStorage.removeItem('user')
           navigate('/login')
         }
+      } finally {
+        setLoading(false)
       }
     }
     fetchData()

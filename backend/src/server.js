@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth.routes');
@@ -18,11 +20,22 @@ const PORT = process.env.PORT || 5000;
 app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleWebhook);
 
 // ── Middleware ──────────────────────────────────────
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per `window`
+  message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: process.env.APP_URL || 'http://localhost:5173',
+  credentials: true
+}));
 app.use(morgan('dev'));
+app.use(limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ── Routes ──────────────────────────────────────────
 app.use('/api/v1/auth', authRoutes);

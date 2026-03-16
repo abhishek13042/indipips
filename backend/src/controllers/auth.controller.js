@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { z } = require('zod');
 const prisma = require('../utils/prisma');
 // ── Generate unique referral code ──────────────────
 function generateReferralCode() {
@@ -15,28 +16,44 @@ function generateReferralCode() {
 function generateTokens(userId, role) {
   const accessToken = jwt.sign(
     { userId, role },
-    'indipips_super_secret_jwt_key_2026',
-    { expiresIn: '7d' }
+    process.env.JWT_SECRET || 'indipips_super_secret_jwt_key_2026',
+    { expiresIn: '15m' }
   );
   const refreshToken = jwt.sign(
     { userId, role },
-    'indipips_refresh_secret_key_2026',
+    process.env.JWT_REFRESH_SECRET || 'indipips_refresh_secret_key_2026',
     { expiresIn: '30d' }
   );
   return { accessToken, refreshToken };
 }
+
+// ── Cookie Options ─────────────────────────────────
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+};
 // ── REGISTER ───────────────────────────────────────
+const registerSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().min(10, "Phone number must be at least 10 digits"),
+  password: z.string().min(8, "Password must be at least 8 characters long"),
+  referralCode: z.string().optional()
+});
+
 const register = async (req, res) => {
   try {
-    const { fullName, email, phone, password } = req.body;
-
-    // Validate required fields
-    if (!fullName || !email || !phone || !password) {
+    const parsedData = registerSchema.safeParse(req.body);
+    if (!parsedData.success) {
       return res.status(400).json({
         success: false,
-        message: 'All fields are required: fullName, email, phone, password'
+        message: parsedData.error.errors[0].message
       });
     }
+
+    const { fullName, email, phone, password, referralCode: reqReferralCode } = parsedData.data;
 
     // Check if email already exists
     const existingEmail = await prisma.user.findUnique({
@@ -60,14 +77,6 @@ const register = async (req, res) => {
       });
     }
 
-    // Validate password strength
-    if (password.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 8 characters long.'
-      });
-    }
-
     // Hash the password
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -81,9 +90,9 @@ const register = async (req, res) => {
 
     // Check if referred by someone
     let referredBy = null;
-    if (req.body.referralCode) {
+    if (reqReferralCode) {
       const referrer = await prisma.user.findUnique({
-        where: { referralCode: req.body.referralCode }
+        where: { referralCode: reqReferralCode }
       });
       if (referrer) referredBy = referrer.id;
     }
@@ -101,7 +110,10 @@ const register = async (req, res) => {
     });
 
     // Generate tokens
-    const tokens = generateTokens(user.id, user.role);
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+
+    // Set refresh token in cookie
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     res.status(201).json({
       success: true,
@@ -117,7 +129,7 @@ const register = async (req, res) => {
           kycStatus: user.kycStatus,
           walletBalance: user.walletBalance.toString()
         },
-        tokens
+        accessToken
       }
     });
 
@@ -131,16 +143,22 @@ const register = async (req, res) => {
 };
 
 // ── LOGIN ──────────────────────────────────────────
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required")
+});
+
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
+    const parsedData = loginSchema.safeParse(req.body);
+    if (!parsedData.success) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required.'
+        message: parsedData.error.errors[0].message
       });
     }
+
+    const { email, password } = parsedData.data;
 
     // Find user
     const user = await prisma.user.findUnique({ where: { email } });
@@ -169,7 +187,10 @@ const login = async (req, res) => {
     }
 
     // Generate tokens
-    const tokens = generateTokens(user.id, user.role);
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+
+    // Set refresh token in cookie
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     res.json({
       success: true,
@@ -185,7 +206,7 @@ const login = async (req, res) => {
           kycStatus: user.kycStatus,
           walletBalance: user.walletBalance.toString()
         },
-        tokens
+        accessToken
       }
     });
 
@@ -245,4 +266,43 @@ const getProfile = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getProfile };
+// ── REFRESH TOKEN ──────────────────────────────────
+const refreshToken = async (req, res) => {
+  try {
+    const token = req.cookies.refreshToken;
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No refresh token provided.' });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET || 'indipips_refresh_secret_key_2026');
+
+    // Check user exists
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user || !user.isActive) {
+      return res.status(401).json({ success: false, message: 'Session expired.' });
+    }
+
+    // Generate new tokens
+    const tokens = generateTokens(user.id, user.role);
+
+    // Set new refresh token in cookie
+    res.cookie('refreshToken', tokens.refreshToken, cookieOptions);
+
+    res.json({
+      success: true,
+      data: { accessToken: tokens.accessToken }
+    });
+
+  } catch (error) {
+    res.status(401).json({ success: false, message: 'Invalid refresh token.' });
+  }
+};
+
+// ── LOGOUT ─────────────────────────────────────────
+const logout = (req, res) => {
+  res.clearCookie('refreshToken', { ...cookieOptions, maxAge: 0 });
+  res.json({ success: true, message: 'Logged out successfully.' });
+};
+
+module.exports = { register, login, getProfile, refreshToken, logout };

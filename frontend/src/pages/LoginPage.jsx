@@ -1,12 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import api from '../api'
+import { useAuth } from '../context/AuthContext'
 
 function LoginPage() {
   const navigate = useNavigate()
+  const { login, user } = useAuth()
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard')
+    }
+  }, [user, navigate])
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -16,12 +24,9 @@ function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('user')
     try {
       const res = await api.post('/auth/login', form)
-      localStorage.setItem('accessToken', res.data.data.tokens.accessToken)
-      localStorage.setItem('user', JSON.stringify(res.data.data.user))
+      login(res.data.data.user, res.data.data.accessToken)
       navigate('/dashboard')
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Try again.')
