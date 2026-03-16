@@ -18,7 +18,7 @@ function RegisterPage() {
     setError('')
     try {
       const res = await api.post('/auth/register', form)
-      localStorage.setItem('accessToken', res.data.data.tokens.accessToken)
+      localStorage.setItem('accessToken', res.data.data.accessToken)
       localStorage.setItem('user', JSON.stringify(res.data.data.user))
       navigate('/dashboard')
     } catch (err) {

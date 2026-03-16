@@ -169,7 +169,7 @@ function LoginPage() {
 
         <button
           type="button"
-          onClick={() => { /* Plan to implement Google OAuth on Day 3 */ }}
+          onClick={() => window.location.href = 'http://localhost:5000/api/v1/auth/google'}
           style={{
             width: '100%',
             backgroundColor: 'white',

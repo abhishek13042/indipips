@@ -28,52 +28,65 @@ const createCheckoutSession = async (req, res) => {
     const displayAmount = amountInSmallestUnit / 100;
 
     // Create Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'payment',
-      customer_email: req.userEmail,
-      metadata: {
-        userId: req.userId,
-        planId: planId,
-        planName: plan.name,
-        challengeType: plan.challengeType,
-      },
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: `${plan.name} Challenge - ${plan.challengeType.replace('_', ' ')}`,
-              description: `Virtual Account: $${displayAmount} | Profit Target: ${plan.profitTarget}% | Max Drawdown: ${plan.maxDrawdown}%`,
-            },
-            unit_amount: amountInSmallestUnit,
-          },
-          quantity: 1,
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        mode: 'payment',
+        customer_email: req.userEmail,
+        metadata: {
+          userId: req.userId,
+          planId: planId,
+          planName: plan.name,
+          challengeType: plan.challengeType,
         },
-      ],
-      success_url: `${process.env.APP_URL}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_URL}/dashboard?payment=cancelled`,
-    });
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `${plan.name} Challenge - ${plan.challengeType.replace('_', ' ')}`,
+                description: `Virtual Account: $${displayAmount} | Profit Target: ${plan.profitTarget}% | Max Drawdown: ${plan.maxDrawdown}%`,
+              },
+              unit_amount: amountInSmallestUnit,
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.APP_URL}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL}/dashboard?payment=cancelled`,
+      });
 
-    // Create pending payment record
-    await prisma.payment.create({
-      data: {
-        userId: req.userId,
-        amount: BigInt(amountInSmallestUnit),
-        currency: 'usd',
-        stripeSessionId: session.id,
-        status: 'PENDING',
-      },
-    });
+      // Create pending payment record
+      await prisma.payment.create({
+        data: {
+          userId: req.userId,
+          amount: BigInt(amountInSmallestUnit),
+          currency: 'usd',
+          stripeSessionId: session.id,
+          status: 'PENDING',
+        },
+      });
 
-    res.json({
-      success: true,
-      message: 'Checkout session created.',
-      data: {
-        sessionId: session.id,
-        url: session.url,
-      },
-    });
+      res.json({
+        success: true,
+        message: 'Checkout session created.',
+        data: {
+          sessionId: session.id,
+          url: session.url,
+        },
+      });
+    } catch (stripeError) {
+      console.error('Stripe Session Creation Error:', stripeError.message);
+      
+      if (stripeError.message.includes('Invalid API Key') || process.env.STRIPE_SECRET_KEY.includes('YOUR_')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Payment gateway is currently in configuration. Please contact support or check your environment variables.'
+        });
+      }
+      
+      throw stripeError; // Re-throw to be caught by the outer catch block
+    }
   } catch (error) {
     console.error('Create checkout session error:', error);
     res.status(500).json({
@@ -225,12 +238,17 @@ const verifyPayment = async (req, res) => {
         if (plan) {
           const startDate = new Date();
           const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + plan.maxTradingDays);
+          expiryDate.setDate(startDate.getDate() + plan.maxTradingDays);
+
+          // Generate unique accountNodeId (e.g., IP-10293847)
+          const randomSuffix = Math.floor(10000000 + Math.random() * 90000000);
+          const accountNodeId = `IP-${randomSuffix}`;
 
           const challenge = await prisma.challenge.create({
             data: {
               userId: req.userId,
               planId: plan.id,
+              accountNodeId,
               accountSize: plan.accountSize,
               currentBalance: plan.accountSize,
               peakBalance: plan.accountSize,

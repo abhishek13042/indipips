@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
+const passport = require('passport');
+require('./config/passport'); // Initialize passport strategy
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth.routes');
@@ -11,13 +13,13 @@ const planRoutes = require('./routes/plans.routes');
 const userRoutes = require('./routes/user.routes');
 const challengeRoutes = require('./routes/challenge.routes');
 const paymentRoutes = require('./routes/payment.routes');
-const { handleWebhook } = require('./controllers/payment.controller');
+const { handleStripeWebhook } = require('./controllers/webhook.controller');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ── Stripe Webhook (MUST be before express.json) ────
-app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleWebhook);
+app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 // ── Middleware ──────────────────────────────────────
 const limiter = rateLimit({
@@ -36,6 +38,7 @@ app.use(limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(passport.initialize());
 
 // ── Routes ──────────────────────────────────────────
 app.use('/api/v1/auth', authRoutes);

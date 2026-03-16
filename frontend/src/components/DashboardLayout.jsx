@@ -11,91 +11,115 @@ function DashboardLayout({ children }) {
     await logout()
     navigate('/login')
   }
-
   const navItems = [
-    { label: '📊 Dashboard', path: '/dashboard' },
-    { label: '🏆 Challenges', path: '/dashboard/challenges' },
-    { label: '👤 Profile', path: '/dashboard/profile' },
+    { label: '📊', name: 'Dashboard', path: '/dashboard' },
+    { label: '🏆', name: 'Challenges', path: '/dashboard/challenges' },
+    { label: '🎫', name: 'Certificates', path: '/dashboard/certificates' },
+    { label: '🎁', name: 'Rewards', path: '/dashboard/rewards' },
+    { label: '👤', name: 'Profile', path: '/dashboard/profile' },
   ]
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fdfdff', fontFamily: "'Inter', sans-serif" }}>
 
-      {/* Sidebar */}
+      {/* Sidebar - Indipips Bespoke "Indigo-Glass" */}
       <aside style={{
-        width: '240px',
-        backgroundColor: 'white',
-        borderRight: '1px solid #e5e7eb',
-        padding: '20px 0',
+        width: '84px',
+        background: 'linear-gradient(180deg, #312e81 0%, #1e1b4b 100%)',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '28px 0',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        boxShadow: '4px 0 24px rgba(31, 46, 129, 0.15)',
+        zIndex: 50
       }}>
-        <div>
-          {/* Logo */}
-          <div style={{ padding: '0 20px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '36px', height: '36px', backgroundColor: '#22c55e', borderRadius: '10px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ fontWeight: 900, fontSize: '14px', color: 'white' }}>IP</span>
-            </div>
-            <span style={{ fontWeight: 800, fontSize: '18px', color: '#111827' }}>Indipips</span>
-          </div>
-
-          {/* Nav Links */}
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 12px' }}>
-            {navItems.map((item) => (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: location.pathname === item.path ? 700 : 500,
-                  color: location.pathname === item.path ? '#111827' : '#6b7280',
-                  backgroundColor: location.pathname === item.path ? '#f3f4f6' : 'transparent',
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+        {/* Logo Icon - Bespoke Glass Style */}
+        <div 
+          onClick={() => navigate('/')}
+          style={{
+            width: '42px', height: '42px', 
+            background: 'rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '12px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            marginBottom: '44px', transition: 'all 0.3s ease'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+        >
+          <span style={{ fontWeight: 900, fontSize: '13px', color: 'white', letterSpacing: '1px' }}>IP</span>
         </div>
 
-        {/* Logout */}
-        <div style={{ padding: '0 12px' }}>
-          <button
+        {/* Nav Links - Glass Buttons */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <div key={item.path} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => navigate(item.path)}
+                  title={item.name}
+                  style={{
+                    width: '48px', height: '48px', borderRadius: '14px', border: 'none',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isActive ? 'rgba(99, 102, 241, 0.4)' : 'transparent',
+                    color: isActive ? 'white' : 'rgba(255, 255, 255, 0.5)',
+                    fontSize: '20px', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    backdropFilter: isActive ? 'blur(4px)' : 'none',
+                    border: isActive ? '1px solid rgba(255, 255, 255, 0.1)' : 'none',
+                  }}
+                  onMouseOver={(e) => !isActive && (e.currentTarget.style.color = 'white')}
+                  onMouseOut={(e) => !isActive && (e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)')}
+                >
+                  {item.label}
+                </button>
+                {isActive && (
+                  <div style={{
+                    position: 'absolute', left: '-18px', top: '14px', width: '4px', height: '20px',
+                    backgroundColor: '#10b981', borderRadius: '0 4px 4px 0',
+                    boxShadow: '0 0 12px #10b981'
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Bottom Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', paddingBottom: '16px' }}>
+          <button style={{ backgroundColor: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'rgba(255, 255, 255, 0.4)' }}>⚙️</button>
+          <button 
             onClick={handleLogout}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              padding: '10px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 500,
-              color: '#ef4444',
-              backgroundColor: 'transparent',
+            style={{ 
+              width: '40px', height: '40px', borderRadius: '10px',
+              backgroundColor: 'rgba(244, 63, 94, 0.1)', border: 'none', 
+              cursor: 'pointer', fontSize: '18px', color: '#fca5a5',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}
           >
-            🚪 Logout
+            🚪
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main style={{ flex: 1, padding: '24px 32px', overflowY: 'auto' }}>
-        {children}
-      </main>
+      {/* Main Content Area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        
+        {/* Indipips Accent Bar */}
+        <div style={{ 
+          height: '6px', 
+          background: 'linear-gradient(90deg, #4338ca 0%, #10b981 100%)',
+          width: '100%'
+        }} />
 
+        <main style={{ padding: '40px 60px', overflowY: 'auto', flex: 1 }}>
+          {children}
+        </main>
+      </div>
     </div>
   )
 }

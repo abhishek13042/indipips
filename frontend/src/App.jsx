@@ -4,6 +4,8 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
 import BuyChallengePage from './pages/BuyChallengePage'
+import OAuthSuccess from './pages/OAuthSuccess'
+import ChallengeDetailPage from './pages/ChallengeDetailPage'
 import ProtectedRoute from './ProtectedRoute'
 
 import { useAuth } from './context/AuthContext'
@@ -24,6 +26,7 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/auth/success" element={<OAuthSuccess />} />
       <Route path="/dashboard" element={
         <ProtectedRoute>
           <DashboardPage />
@@ -32,6 +35,11 @@ function App() {
       <Route path="/dashboard/new-challenge" element={
         <ProtectedRoute>
           <BuyChallengePage />
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/challenges/:id" element={
+        <ProtectedRoute>
+          <ChallengeDetailPage />
         </ProtectedRoute>
       } />
     </Routes>

@@ -305,4 +305,26 @@ const logout = (req, res) => {
   res.json({ success: true, message: 'Logged out successfully.' });
 };
 
-module.exports = { register, login, getProfile, refreshToken, logout };
+// ── GOOGLE CALLBACK ───────────────────────────────
+const googleCallback = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/login?error=auth_failed`);
+    }
+
+    // Generate tokens
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+
+    // Set refresh token in cookie
+    res.cookie('refreshToken', refreshToken, cookieOptions);
+
+    // Redirect to frontend success page
+    res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/auth/success?token=${accessToken}`);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    res.redirect(`${process.env.APP_URL || 'http://localhost:5173'}/login?error=server_error`);
+  }
+};
+
+module.exports = { register, login, getProfile, refreshToken, logout, googleCallback };
