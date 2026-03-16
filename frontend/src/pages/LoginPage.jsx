@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import api from '../api'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -36,74 +37,167 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#fcfcfc',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: '"Inter", sans-serif',
+      padding: '24px'
+    }}>
+      {/* Logo Section */}
+      <div style={{ marginBottom: '40px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '32px', fontWeight: 900, color: '#0f172a', letterSpacing: '-1px' }}>
+          IndiPips <span style={{ color: '#2563eb' }}>®</span>
+        </h1>
+        <p style={{ color: '#64748b', marginTop: '8px', fontWeight: 600 }}>Sign in to your account</p>
+      </div>
 
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-green-400 rounded-xl flex items-center justify-center">
-              <span className="text-black font-black">IP</span>
+      <div style={{
+        backgroundColor: 'white',
+        padding: '40px',
+        borderRadius: '20px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+        width: '100%',
+        maxWidth: '440px',
+        border: '1px solid #f1f5f9'
+      }}>
+        {error && (
+          <div style={{
+            backgroundColor: '#fef2f2',
+            color: '#dc2626',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            marginBottom: '24px',
+            fontSize: '14px',
+            fontWeight: 600,
+            border: '1px solid #fee2e2'
+          }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+              Email address
+            </label>
+            <input
+              type="email"
+              name="email"
+              placeholder="you@example.com"
+              value={form.email}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                border: '1.5px solid #e2e8f0',
+                outline: 'none',
+                fontSize: '15px',
+                transition: 'all 0.2s',
+                backgroundColor: '#f8fafc'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Password</label>
+              <Link to="/forgot-password" style={{ fontSize: '13px', fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
+                Forgot Password?
+              </Link>
             </div>
-            <span className="text-white font-bold text-2xl">Indipips</span>
-          </Link>
-          <h1 className="text-3xl font-black text-white mb-2">Welcome back!</h1>
-          <p className="text-gray-400">Login to your trading account</p>
+            <input
+              type="password"
+              name="password"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={handleChange}
+              required
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                border: '1.5px solid #e2e8f0',
+                outline: 'none',
+                fontSize: '15px',
+                transition: 'all 0.2s',
+                backgroundColor: '#f8fafc'
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              backgroundColor: '#2563eb',
+              color: 'white',
+              padding: '14px',
+              borderRadius: '10px',
+              border: 'none',
+              fontWeight: 700,
+              fontSize: '15px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              marginBottom: '20px',
+              transition: 'all 0.2s'
+            }}
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+
+        <div style={{ position: 'relative', textAlign: 'center', marginBottom: '20px' }}>
+          <hr style={{ border: '0', borderTop: '1px solid #e2e8f0' }} />
+          <span style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '0 12px',
+            fontSize: '12px',
+            color: '#94a3b8',
+            fontWeight: 600
+          }}>OR</span>
         </div>
 
-        {/* Form */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
+        <button
+          type="button"
+          onClick={() => { /* Plan to implement Google OAuth on Day 3 */ }}
+          style={{
+            width: '100%',
+            backgroundColor: 'white',
+            color: '#1e293b',
+            padding: '12px',
+            borderRadius: '10px',
+            border: '1.5px solid #e2e8f0',
+            fontWeight: 600,
+            fontSize: '14px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            transition: 'all 0.2s'
+          }}
+        >
+          <img 
+            src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/smartlock/google.svg" 
+            alt="Google" 
+            style={{ width: '18px', height: '18px' }} 
+          />
+          Continue with Google
+        </button>
 
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-              <p className="text-red-400 text-sm">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-gray-400 text-sm mb-2">Email Address</label>
-              <input
-                type="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                required
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-green-400 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-sm mb-2">Password</label>
-              <input
-                type="password"
-                name="password"
-                value={form.password}
-                onChange={handleChange}
-                placeholder="••••••••"
-                required
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-green-400 transition-colors"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-green-400 text-black py-4 rounded-xl font-black text-lg hover:bg-green-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Logging in...' : 'Login'}
-            </button>
-          </form>
-
-          <p className="text-center text-gray-400 text-sm mt-6">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-green-400 hover:text-green-300 font-semibold">
-              Start Challenge
-            </Link>
-          </p>
-        </div>
-
+        <p style={{ textAlign: 'center', marginTop: '32px', fontSize: '14px', color: '#64748b', fontWeight: 500 }}>
+          Ready to trade? <Link to="/register" style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'none' }}>Create your account</Link>
+        </p>
       </div>
     </div>
   )
