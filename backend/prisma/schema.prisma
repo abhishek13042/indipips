@@ -56,6 +56,7 @@ model Challenge {
   accountSize     BigInt
   currentBalance  BigInt
   peakBalance     BigInt
+  dailyStartingBalance BigInt?
   totalPnl        BigInt          @default(0)
   dailyPnl        BigInt          @default(0)
   daysTraded      Int             @default(0)
@@ -65,6 +66,9 @@ model Challenge {
   startDate       DateTime
   expiryDate      DateTime
   passedAt        DateTime?
+  totalTrades     Int             @default(0)
+  winCount        Int             @default(0)
+  lossCount       Int             @default(0)
   brokerConnected Boolean         @default(false)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -72,24 +76,25 @@ model Challenge {
   user            User            @relation(fields: [userId], references: [id])
   payouts         Payout[]
   trades          Trade[]
+  equitySnapshots EquitySnapshot[]
 }
 
 model Trade {
-  id            String    @id @default(uuid())
+  id            String      @id @default(uuid())
   challengeId   String
   userId        String
-  instrument    String
+  symbol        String
   tradeType     TradeType
   quantity      Int
   entryPrice    BigInt
   exitPrice     BigInt?
-  pnl           BigInt    @default(0)
-  tradeDate     DateTime
-  entryTime     DateTime
+  pnl           BigInt      @default(0)
+  status        TradeStatus @default(OPEN)
+  entryTime     DateTime    @default(now())
   exitTime      DateTime?
-  brokerTradeId String?   @unique
-  createdAt     DateTime  @default(now())
-  challenge     Challenge @relation(fields: [challengeId], references: [id])
+  brokerTradeId String?     @unique
+  createdAt     DateTime    @default(now())
+  challenge     Challenge   @relation(fields: [challengeId], references: [id])
 }
 
 model Payment {
@@ -164,4 +169,18 @@ enum PayoutStatus {
   APPROVED
   REJECTED
   TRANSFERRED
+}
+
+enum TradeStatus {
+  OPEN
+  CLOSED
+}
+
+model EquitySnapshot {
+  id          String    @id @default(uuid())
+  challengeId String
+  balance     BigInt
+  equity      BigInt
+  timestamp   DateTime  @default(now())
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
 }

@@ -7,16 +7,32 @@ const cookieParser = require('cookie-parser');
 const passport = require('passport');
 require('./config/passport'); // Initialize passport strategy
 require('dotenv').config();
+const http = require('http');
+const socketIO = require('./utils/socket');
 
 const authRoutes = require('./routes/auth.routes');
 const planRoutes = require('./routes/plans.routes');
 const userRoutes = require('./routes/user.routes');
 const challengeRoutes = require('./routes/challenge.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const tradeRoutes = require('./routes/trade.routes');
+const kycRoutes = require('./routes/kyc.routes');
+const adminRoutes = require('./routes/admin.routes');
+const payoutRoutes = require('./routes/payout.routes');
+const { initBreachScanner } = require('./workers/breachScanner');
+const { initSnapshotWorker } = require('./workers/snapshotWorker');
 const { handleStripeWebhook } = require('./controllers/webhook.controller');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Initialize Socket.io
+socketIO.init(server);
+
+// Start Background Workers
+initBreachScanner();
+initSnapshotWorker();
 
 // ── Stripe Webhook (MUST be before express.json) ────
 app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
@@ -46,6 +62,10 @@ app.use('/api/v1/plans', planRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/challenges', challengeRoutes);
 app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/trades', tradeRoutes);
+app.use('/api/v1/kyc', kycRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/payouts', payoutRoutes);
 
 // ── Health Check ────────────────────────────────────
 app.get('/', (req, res) => {
@@ -66,7 +86,7 @@ app.use((req, res) => {
 });
 
 // ── Start Server ────────────────────────────────────
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`
   ██╗███╗   ██╗██████╗ ██╗██████╗ ██╗██████╗ ███████╗
   ██║████╗  ██║██╔══██╗██║██╔══██╗██║██╔══██╗██╔════╝

@@ -6,6 +6,8 @@ import DashboardPage from './pages/DashboardPage'
 import BuyChallengePage from './pages/BuyChallengePage'
 import OAuthSuccess from './pages/OAuthSuccess'
 import ChallengeDetailPage from './pages/ChallengeDetailPage'
+import KYCPage from './pages/KYCPage'
+import AdminDashboardPage from './pages/AdminDashboardPage'
 import ProtectedRoute from './ProtectedRoute'
 
 import { useAuth } from './context/AuthContext'
@@ -40,6 +42,16 @@ function App() {
       <Route path="/dashboard/challenges/:id" element={
         <ProtectedRoute>
           <ChallengeDetailPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/kyc" element={
+        <ProtectedRoute>
+          <KYCPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/matrix" element={
+        <ProtectedRoute>
+          <AdminDashboardPage />
         </ProtectedRoute>
       } />
     </Routes>

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { io } from 'socket.io-client'
 import DashboardLayout from '../components/DashboardLayout'
 import api from '../api'
 
 import { useAuth } from '../context/AuthContext'
+
+const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 function DashboardPage() {
   const navigate = useNavigate()
@@ -11,30 +14,57 @@ function DashboardPage() {
   const [challenges, setChallenges] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const challengesRes = await api.get('/challenges')
-        const data = challengesRes.data.data && challengesRes.data.data.length > 0 ? challengesRes.data.data : [
-          { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
-        ];
-        setChallenges(data)
-      } catch (err) {
-        console.warn("API fallback to mock data:", err);
-        setChallenges([
-          { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
-        ]);
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          localStorage.removeItem('accessToken')
-          localStorage.removeItem('user')
-          navigate('/login')
-        }
-      } finally {
-        setLoading(false)
+  const fetchData = async () => {
+    try {
+      const challengesRes = await api.get('/challenges')
+      const data = challengesRes.data.data && challengesRes.data.data.length > 0 ? challengesRes.data.data : [
+        { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
+      ];
+      setChallenges(data)
+    } catch (err) {
+      console.warn("API fallback to mock data:", err);
+      // ... (mock data removed for conciseness in replacement, keeping logic)
+      setChallenges([
+        { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
+      ]);
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('user')
+        navigate('/login')
       }
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchData()
   }, [])
+
+  // Socket.io Integration
+  useEffect(() => {
+    if (!user?.id) return
+
+    const socket = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['websocket']
+    })
+
+    socket.on('connect', () => {
+      console.log('📡 Connected to Real-time Hub')
+      socket.emit('join_room', user.id)
+    })
+
+    socket.on('account_update', (data) => {
+      console.log('⚡ Real-time Update Received:', data)
+      // Re-fetch data to reflect live balance/equity
+      fetchData()
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [user?.id])
 
   if (loading) {
     return (

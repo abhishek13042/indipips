@@ -1,27 +1,33 @@
 const prisma = require('../utils/prisma');
+const cache = require('../services/cache.service');
+const { calculatePerformanceStats } = require('../utils/statsEngine');
 
 // Get all challenges for logged in trader
 const getMyChallenges = async (req, res) => {
   try {
-    const challenges = await prisma.challenge.findMany({
-      where: { userId: req.userId },
-      include: {
-        plan: {
-          select: {
-            name: true,
-            accountSize: true,
-            challengeType: true,
-            profitTarget: true,
-            dailyLossLimit: true,
-            maxDrawdown: true,
-            minTradingDays: true,
-            maxTradingDays: true,
-            profitSplit: true,
+    const cacheKey = `user:${req.userId}:challenges`;
+    
+    const challenges = await cache.getOrSet(cacheKey, async () => {
+      return await prisma.challenge.findMany({
+        where: { userId: req.userId },
+        include: {
+          plan: {
+            select: {
+              name: true,
+              accountSize: true,
+              challengeType: true,
+              profitTarget: true,
+              dailyLossLimit: true,
+              maxDrawdown: true,
+              minTradingDays: true,
+              maxTradingDays: true,
+              profitSplit: true,
+            }
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }, 60); // 1 minute user-specific cache
 
     const formatted = challenges.map(c => ({
       id: c.id,
@@ -70,8 +76,11 @@ const getChallengeById = async (req, res) => {
         plan: true,
         trades: {
           orderBy: { createdAt: 'desc' },
-          take: 20,
         },
+        equitySnapshots: {
+          orderBy: { timestamp: 'asc' },
+          take: 30, // Last 30 days of history
+        }
       }
     });
 
@@ -89,10 +98,8 @@ const getChallengeById = async (req, res) => {
       ? (Number(challenge.totalPnl) / Number(challenge.accountSize)) * 100
       : 0;
 
-    // Calculate daily loss percentage
-    const dailyLossPct = challenge.accountSize > 0
-      ? (Math.abs(Math.min(0, Number(challenge.dailyPnl))) / Number(challenge.accountSize)) * 100
-      : 0;
+    // Calculate Advanced Performance Stats
+    const stats = calculatePerformanceStats(challenge.trades, Number(challenge.accountSize) / 100);
 
     res.json({
       success: true,
@@ -115,6 +122,13 @@ const getChallengeById = async (req, res) => {
         drawdownPercentage: Math.round(drawdownPct * 100) / 100,
         profitPercentage: Math.round(profitPct * 100) / 100,
         dailyLossPercentage: Math.round(dailyLossPct * 100) / 100,
+        // Advanced Analytics
+        stats,
+        equityHistory: challenge.equitySnapshots.map(s => ({
+          balance: Number(s.balance) / 100,
+          equity: Number(s.equity) / 100,
+          timestamp: s.timestamp
+        })),
         plan: {
           name: challenge.plan.name,
           challengeType: challenge.plan.challengeType,

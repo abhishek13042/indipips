@@ -10,6 +10,18 @@ const ChallengeDetailPage = () => {
   const [challenge, setChallenge] = useState(null);
   const [allChallenges, setAllChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [payoutEligible, setPayoutEligible] = useState(null);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutMessage, setPayoutMessage] = useState('');
+
+  const fetchPayoutEligibility = async () => {
+    try {
+      const { data } = await api.get(`/payouts/eligibility/${id}`);
+      if (data.success) setPayoutEligible(data.data);
+    } catch (err) {
+      console.warn('Payout eligibility check failed');
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -20,6 +32,7 @@ const ChallengeDetailPage = () => {
         ]);
         setChallenge(singleRes.data.data);
         setAllChallenges(allRes.data.data);
+        fetchPayoutEligibility();
       } catch (err) {
         console.warn('API fetch failed, switching to mock data for verification.');
         const mockAll = [
@@ -59,6 +72,22 @@ const ChallengeDetailPage = () => {
     };
     fetchData();
   }, [id, navigate]);
+
+  const handleRequestPayout = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/payouts/request', { challengeId: id });
+      if (data.success) {
+        setPayoutMessage('Payout request submitted successfully!');
+        setTimeout(() => setShowPayoutModal(false), 2000);
+        fetchPayoutEligibility();
+      }
+    } catch (err) {
+      setPayoutMessage(err.response?.data?.message || 'Request failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -169,6 +198,20 @@ const ChallengeDetailPage = () => {
                 </div>
               </div>
             </div>
+            {payoutEligible?.isEligible && (
+              <button 
+                onClick={() => setShowPayoutModal(true)}
+                style={{
+                  backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px 24px', 
+                  borderRadius: '16px', fontWeight: 900, fontSize: '13px', cursor: 'pointer',
+                  boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                💰 WITHDRAW PROFIT
+              </button>
+            )}
           </div>
 
           {/* Stats Cluster */}
@@ -306,6 +349,78 @@ const ChallengeDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Payout Modal */}
+      {showPayoutModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(30, 27, 75, 0.4)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '32px', width: '100%', maxWidth: '500px',
+            padding: '40px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #eef2ff'
+          }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#1e1b4b', marginBottom: '8px' }}>Withdraw Earnings</h2>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '32px' }}>Review your profit distribution before submitting the request.</p>
+
+            {payoutMessage ? (
+              <div style={{ 
+                padding: '20px', borderRadius: '20px', backgroundColor: payoutMessage.includes('success') ? '#ecfdf5' : '#fff1f2',
+                color: payoutMessage.includes('success') ? '#047857' : '#991b1b', fontWeight: 800, textAlign: 'center'
+              }}>
+                {payoutMessage}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#4b5563' }}>Total Account Profit</span>
+                  <span style={{ fontSize: '16px', fontWeight: 900, color: '#1e1b4b' }}>${payoutEligible?.breakdown?.totalProfit.toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#94a3b8' }}>Trader Share ({payoutEligible?.breakdown?.splitPercent}%)</span>
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#1e1b4b' }}>${payoutEligible?.breakdown?.traderGrossShare.toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#94a3b8' }}>TDS Deduction (10%)</span>
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#ef4444' }}>-${payoutEligible?.breakdown?.tdsAmount.toLocaleString()}</span>
+                </div>
+                <div style={{ 
+                  backgroundColor: '#fdfdff', padding: '24px', borderRadius: '24px', border: '1px solid #eef2ff',
+                  marginTop: '12px', textAlign: 'center'
+                }}>
+                  <p style={{ fontSize: '11px', fontWeight: 900, color: '#4338ca', margin: '0 0 8px 0', letterSpacing: '1px' }}>ESTIMATED NET PAYOUT</p>
+                  <p style={{ fontSize: '32px', fontWeight: 900, color: '#10b981', margin: 0 }}>${payoutEligible?.breakdown?.netPayout.toLocaleString()}</p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
+                  <button 
+                    onClick={() => setShowPayoutModal(false)}
+                    style={{ 
+                      flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0',
+                      backgroundColor: 'white', color: '#64748b', fontWeight: 800, cursor: 'pointer' 
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    onClick={handleRequestPayout}
+                    disabled={loading}
+                    style={{ 
+                      flex: 2, padding: '16px', borderRadius: '16px', border: 'none',
+                      backgroundColor: '#4338ca', color: 'white', fontWeight: 900, cursor: 'pointer',
+                      boxShadow: '0 10px 15px -3px rgba(67, 56, 202, 0.3)'
+                    }}
+                  >
+                    {loading ? 'PROCESSING...' : 'REQUEST WITHDRAWAL'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };

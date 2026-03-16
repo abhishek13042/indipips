@@ -1,51 +1,41 @@
-# Indipips — Master Task List
+# Indipips Project Task List
 
-> [!IMPORTANT]
-> For a detailed daily breakdown of this week, see: **[Week 1 Daily Roadmap](file:///C:/Users/Admin/.gemini/antigravity/brain/b88d7302-e125-43a9-89f8-827a18a34d02/Week_1_Roadmap.md)**
+## Phase 1: Authentication & User Management [x]
+- [x] User Registration with Phone/Email
+- [x] Secure Password Hashing
+- [x] JWT-based Authentication
+- [x] User Profile Management
+- [x] Initial UI for Login/Register
 
-## Phase 1: Stability & Foundation (Week 1-2) [/]
-- [x] Shared Prisma Client (Connection Pooling)
-- [x] Fix critical Login/Redirect loop bugs
-- [x] Implement Zod validation on Auth routes
-- [x] Add server-side Rate Limiting
-- [x] **Implement JWT Refresh Token rotation** (Done!)
-- [x] **Centralized Auth Context** (Day 2 Done!)
-- [x] **Global Error Boundary** (Safety Net Added!)
-- [x] **Google OAuth Integration** (Day 3 Complete!)
+## Phase 2: Trading Plan Infrastructure [x]
+- [x] Core Plan Data Models
+- [x] Plan Discovery API
+- [x] Integrated Payment Gateway (Stripe)
+- [x] Challenge Activation Workflow
+- [x] Human-readable Account IDs
 
-## Phase 2: Secure Payment & Purchase (Week 3) [/]
-- [x] **Stripe Integration**: Checkout sessions flow (Done!)
-- [x] **Webhook Handling**: Automated account activation (Day 3 Complete!)
-- [x] Day 3: Payments & Social Auth (Complete)
-    - [x] Google OAuth (Backend + Frontend)
-    - [x] Stripe Webhook listener
-    - [x] Dashboard "My Challenges" section
-- [/] Day 5: Launch Ready Check (Active Focus)
-    - [x] Challenge Detail Page UI
-    - [x] Premium UI Refinement (FundingPips Style)
-        - [x] Narrow icon-sidebar (DashboardLayout)
-        - [x] Behavioral Bias Meter (DashboardPage)
-        - [x] Profitability semi-circle guage
-        - [x] Authentic Account Selection Sidebar (ChallengeDetailPage)
-        - [x] Session Win Rates progress bars
-        - [x] Most Traded Instruments bars
-    - [x] Bespoke Indipips Brand Identity
-        - [x] Royal Indigo & Mint design system
-        - [x] Glassmorphic Sidebar transformation
-        - [x] Indian Market Session tracker integration
-        - [x] Account Switcher Hub redesign
-    - [x] Equity/Balance Charts (Recharts)
-    - [x] Objective Progress Bars
-    - [ ] Real-time trade history integration (Backend needed)
-- [x] Day 5: Launch Ready Check
-    - [x] End-to-end journey test (Register -> Login -> Order)
-    - [x] Branding & UI consistency audit
-    - [x] Performance & Error Boundary check
-    - [x] Finalize Week 2 & Scaling documentation
+## Phase 3: Risk Engine & Active Trading [x]
+- [x] Trade Model & Management API
+- [x] Real-time Risk Engine (Daily Loss/Max Drawdown)
+- [x] WebSocket Integration (Socket.io)
+- [x] Automated Breach Monitoring Worker
+- [x] Advanced Performance Analytics
 
-## Phase 3: High-Performance Dashboard (Week 4) [ ]
-- [ ] Real-time data feed optimization (Socket.io)
-- [ ] Redis caching for summaries
-- [ ] Dashboard Charts & Graphs
+## Phase 4: Operations & Admin [x]
+- [x] Day 13: Identity & KYC Verification
+    - [x] Aadhaar/PAN Validation Service Integration
+    - [x] KYC Status Workflow in DB
+- [x] Day 14: Admin "Matrix Hub" (Phase 1)
+    - [x] Global Account Monitoring Dashboard
+    - [x] Manual Adjustment Controls
+- [x] Day 15: Payout Automation Workflow
+    - [x] Profit Split Calculation
+    - [x] Trader Payout Portal
+- [x] Day 16: Redis Performance Layer
+    - [x] Dashboard Caching
+    - [x] Session Scaling
+- [x] Day 17: Week 3 QA & Load Prep
+    - [x] E2E Operational Simulation
 
-... (See Timeline v2.0 for full 8-week plan)
+## Phase 5: Live Execution & Hardening [ ]
+- [ ] Day 18-22: Upstox API & Production Prep

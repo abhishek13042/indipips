@@ -16,6 +16,7 @@ function DashboardLayout({ children }) {
     { label: '🏆', name: 'Challenges', path: '/dashboard/challenges' },
     { label: '🎫', name: 'Certificates', path: '/dashboard/certificates' },
     { label: '🎁', name: 'Rewards', path: '/dashboard/rewards' },
+    { label: '🛡️', name: 'KYC', path: '/dashboard/kyc' },
     { label: '👤', name: 'Profile', path: '/dashboard/profile' },
   ]
 
