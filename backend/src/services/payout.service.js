@@ -1,7 +1,4 @@
-/**
- * Payout Service
- * Logic for calculating profit splits and processing payout requests.
- */
+const auditLogger = require('../utils/auditLogger');
 
 const DEFAULT_PROFIT_SPLIT = 80; // 80% to trader
 const TDS_PERCENT = 10; // 10% TDS (Income Tax) for Indian payouts

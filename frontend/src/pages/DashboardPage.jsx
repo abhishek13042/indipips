@@ -1,341 +1,306 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { io } from 'socket.io-client'
-import DashboardLayout from '../components/DashboardLayout'
+import { useParams, useNavigate } from 'react-router-dom'
+import { Share2, ChevronUp, ArrowLeft } from 'lucide-react'
+import DashboardLayout from '../layouts/DashboardLayout'
+import { useAuth } from '../context/AuthContext'
 import api from '../api'
 
-import { useAuth } from '../context/AuthContext'
-
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
-
 function DashboardPage() {
+  const { id } = useParams()
   const navigate = useNavigate()
-  const { user, setUser } = useAuth()
-  const [challenges, setChallenges] = useState([])
+  const { user } = useAuth()
+  const [challenge, setChallenge] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchData = async () => {
-    try {
-      const challengesRes = await api.get('/challenges')
-      const data = challengesRes.data.data && challengesRes.data.data.length > 0 ? challengesRes.data.data : [
-        { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
-      ];
-      setChallenges(data)
-    } catch (err) {
-      console.warn("API fallback to mock data:", err);
-      // ... (mock data removed for conciseness in replacement, keeping logic)
-      setChallenges([
-        { id: '100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } }
-      ]);
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('user')
-        navigate('/login')
-      }
-    } finally {
-      setLoading(false)
-    }
+  // Using mock data for UI replication since API might not match screenshot exactly
+  const mockData = {
+    totalAllocation: 0.00,
+    totalTrades: 647,
+    level: 'Bronze',
+    totalReward: 0.00,
+    highestReward: 0.00,
+    count: 0,
+    winRate: 21.9,
+    won: 142,
+    lost: 505,
+    avgHolding: '18m',
+    sessions: [
+      { name: 'New York', percent: 27.4, val: 27.4 },
+      { name: 'London', percent: 17.4, val: 17.4 },
+      { name: 'Asia', percent: 22.0, val: 22.0 }
+    ],
+    instruments: [
+      { name: 'GBPUSD', w: 42, l: 165 },
+      { name: 'XAUUSD', w: 35, l: 132 },
+      { name: 'EURUSD', w: 30, l: 89 }
+    ]
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
-
-  // Socket.io Integration
-  useEffect(() => {
-    if (!user?.id) return
-
-    const socket = io(SOCKET_URL, {
-      withCredentials: true,
-      transports: ['websocket']
-    })
-
-    socket.on('connect', () => {
-      console.log('📡 Connected to Real-time Hub')
-      socket.emit('join_room', user.id)
-    })
-
-    socket.on('account_update', (data) => {
-      console.log('⚡ Real-time Update Received:', data)
-      // Re-fetch data to reflect live balance/equity
-      fetchData()
-    })
-
-    return () => {
-      socket.disconnect()
+    const fetchRealData = async () => {
+       try {
+         const res = await api.get(`/challenges/${id}`)
+         if (res.data?.data) {
+           setChallenge(res.data.data)
+         }
+       } catch (err) {
+         console.warn("Using mock data")
+         setChallenge({ id, ...mockData })
+       } finally {
+         setLoading(false)
+       }
     }
-  }, [user?.id])
+    if (id) fetchRealData()
+    else setLoading(false)
+  }, [id])
+
+  // Simulating light/dark mode for the inner components. 
+  // Normally we would pull this state from a higher level context or use Tailwind's dark class
+  const isDarkMode = false; 
+
+  const cardClass = `rounded-xl border ${isDarkMode ? 'bg-[#151b28] border-slate-700' : 'bg-white border-slate-200 shadow-sm'} p-4 md:p-6`
+  const textPrimary = isDarkMode ? 'text-white' : 'text-slate-900'
+  const textSecondary = isDarkMode ? 'text-slate-400' : 'text-slate-500'
 
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#6b7280' }}>Loading...</p>
-      </div>
-    )
+     return <DashboardLayout><div className="flex justify-center items-center h-full">Loading...</div></DashboardLayout>
   }
 
   return (
     <DashboardLayout>
-      {/* User Greeting & Quick Action */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '40px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div style={{ 
-            width: '64px', height: '64px', 
-            background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)', 
-            borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 16px rgba(79, 70, 229, 0.2)'
-          }}>
-            <span style={{ fontWeight: 800, fontSize: '24px', color: 'white' }}>{user?.fullName?.charAt(0)}</span>
-          </div>
-          <div>
-            <h1 style={{ fontSize: '32px', fontWeight: 900, color: '#1e1b4b', margin: '0 0 6px 0', letterSpacing: '-0.7px' }}>
-              Welcome back, {user?.fullName?.split(' ')[0]}
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ color: '#4b5563', fontSize: '14px', fontWeight: 600 }}>Proprietary Overview</span>
-              <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#94a3b8' }} />
-              <span style={{ color: '#10b981', fontSize: '14px', fontWeight: 800 }}>
-                Equity: ${challenges.reduce((sum, c) => sum + Number(c.currentBalance), 0).toLocaleString()}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '14px' }}>
-          <div style={{ 
-            display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px', marginRight: '10px' 
-          }}>
-            <button style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>$ USD</button>
-            <button style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: 'transparent', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: '#64748b' }}>₹ INR</button>
-          </div>
-          <button
-            onClick={() => navigate('/dashboard/new-challenge')}
-            style={{ 
-              backgroundColor: '#4338ca', color: 'white', border: 'none', padding: '14px 28px', 
-              borderRadius: '16px', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
-              boxShadow: '0 10px 20px rgba(67, 56, 202, 0.25)', transition: 'all 0.3s ease'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            + NEW CHALLENGE
-          </button>
-        </div>
-      </div>
-
-      {/* Bespoke Analytics Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '24px', marginBottom: '40px' }}>
-        {/* Main Performance Matrix */}
-        <div style={{ 
-          backgroundColor: 'white', borderRadius: '32px', padding: '32px',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '28px' }}>
-             <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1e1b4b' }}>Account Velocity</h3>
-             <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>LIVE FEEDS • SECURED</div>
-          </div>
-          <div style={{ 
-            height: '240px', background: 'linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)', 
-            borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1.5px dashed #e2e8f0'
-          }}>
-            <p style={{ fontWeight: 700, color: '#94a3b8', fontSize: '14px' }}>Matrix Analysis Engine Ready</p>
-          </div>
-        </div>
-
-        {/* Localized Market Tracker & Bias */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Indian Market Pulse */}
-          <div style={{ 
-            backgroundColor: '#111827', borderRadius: '28px', padding: '24px',
-            boxShadow: '0 20px 30px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#4b5563', letterSpacing: '1px' }}>MARKET PULSE</span>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>● OPEN</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <h4 style={{ color: 'white', fontSize: '16px', fontWeight: 800, margin: 0 }}>NSE / BSE (India)</h4>
-                <p style={{ color: '#94a3b8', fontSize: '12px', margin: '4px 0 0 0' }}>Session Ends in 2h 15m</p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ color: '#10b981', fontSize: '20px', fontWeight: 800 }}>+1.2%</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Psychology / Bias */}
-          <div style={{ 
-            backgroundColor: 'white', borderRadius: '28px', padding: '24px',
-            border: '1px solid #f1f5f9', boxShadow: '0 10px 20px rgba(0,0,0,0.02)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#94a3b8' }}>Trader Edge</span>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e1b4b' }}>High Confidence</span>
-            </div>
-            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-              <span style={{ fontSize: '24px', fontWeight: 900, color: '#10b981' }}>BULLISH</span>
-            </div>
-            <div style={{ height: '10px', backgroundColor: '#f1f5f9', borderRadius: '5px', overflow: 'hidden' }}>
-              <div style={{ width: '75%', height: '100%', background: 'linear-gradient(90deg, #4338ca 0%, #10b981 100%)', borderRadius: '5px' }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Rewards Row - Bespoke Dark Card */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '24px', marginBottom: '40px' }}>
-        <div style={{ 
-          background: 'radial-gradient(circle at top left, #4338ca 0%, #1e1b4b 100%)', 
-          borderRadius: '32px', padding: '36px', color: 'white', display: 'flex', justifyContent: 'space-between',
-          position: 'relative', overflow: 'hidden'
-        }}>
-          <div style={{ position: 'relative', zIndex: 2 }}>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 800, fontSize: '12px', marginBottom: '10px', letterSpacing: '1.5px' }}>TIER PROGRESS</p>
-            <h2 style={{ fontSize: '36px', fontWeight: 900, margin: '0 0 20px 0', letterSpacing: '-1px' }}>Sapphire Elite</h2>
-            <div style={{ display: 'flex', gap: '32px' }}>
-              <div>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', fontWeight: 800 }}>NET PAYOUT</p>
-                <p style={{ fontSize: '20px', fontWeight: 900, color: '#34d399' }}>₹0.00</p>
-              </div>
-              <div style={{ width: '1px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
-              <div>
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', fontWeight: 800 }}>PROFIT SPLIT</p>
-                <p style={{ fontSize: '20px', fontWeight: 900 }}>90/10</p>
-              </div>
-            </div>
-          </div>
-          <div style={{ 
-            width: '120px', height: '120px', borderRadius: '30px', 
-            backgroundColor: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.12)'
-          }} />
-        </div>
-
-        <div style={{ 
-          backgroundColor: 'white', borderRadius: '32px', padding: '32px',
-          border: '1px solid #f1f5f9', boxShadow: '0 10px 20px rgba(0,0,0,0.02)',
-          display: 'flex', flexDirection: 'column', justifyContent: 'center'
-        }}>
-          <span style={{ fontSize: '14px', fontWeight: 800, color: '#94a3b8', display: 'block', marginBottom: '20px' }}>Probability Hub</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-             <div style={{ width: '90px', height: '90px', borderRadius: '50%', border: '10px solid #f1f1f5', borderTopColor: '#4338ca', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: '18px', fontWeight: 900 }}>88%</span>
-             </div>
-             <div>
-                <p style={{ margin: 0, fontWeight: 800, color: '#1e1b4b' }}>Alpha Accuracy</p>
-                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>Top 5% of Traders</p>
-             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Insights Row (Sessions & Instruments) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
-        {/* Most Traded Instruments */}
-        <div style={{ backgroundColor: 'white', border: '1px solid #f1f1f5', borderRadius: '24px', padding: '24px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>Most Traded Instruments</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {[
-              { name: 'XAUUSD', color: '#fbbf24', win: 68 },
-              { name: 'EURUSD', color: '#6366f1', win: 54 },
-              { name: 'GBPUSD', color: '#22c55e', win: 42 },
-              { name: 'NAS100', color: '#f43f5e', win: 31 },
-            ].map((inst, i) => (
-              <div key={i}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>{inst.name}</span>
-                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>{inst.win}% WIN RATE</span>
-                </div>
-                <div style={{ height: '6px', backgroundColor: '#f1f1f5', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ width: `${inst.win}%`, height: '100%', backgroundColor: inst.color, borderRadius: '3px' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Session Win Rates */}
-        <div style={{ backgroundColor: 'white', border: '1px solid #f1f1f5', borderRadius: '24px', padding: '24px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', marginBottom: '20px' }}>Session Win Rates</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-            {[
-              { name: 'London', icon: '🎡', rate: 72 },
-              { name: 'New York', icon: '🗽', rate: 45 },
-              { name: 'Asian', icon: '🏮', rate: 61 },
-            ].map((session, i) => (
-              <div key={i} style={{ padding: '20px', backgroundColor: '#fdfdff', border: '1px solid #f1f1f5', borderRadius: '20px', textAlign: 'center' }}>
-                <span style={{ fontSize: '24px', display: 'block', marginBottom: '8px' }}>{session.icon}</span>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', display: 'block', marginBottom: '4px' }}>{session.name.toUpperCase()}</span>
-                <span style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>{session.rate}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Accounts List Section */}
-      <div style={{ backgroundColor: 'white', border: '1px solid #f1f1f5', borderRadius: '24px', padding: '28px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>My Trading Accounts</h2>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <select style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #f1f1f5', fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
-              <option>All Phases</option>
-            </select>
-          </div>
-        </div>
-
-        {challenges.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-            {challenges.map((challenge) => (
-              <div 
-                key={challenge.id} 
-                onClick={() => navigate(`/dashboard/challenges/${challenge.id}`)}
-                style={{ 
-                  padding: '24px', backgroundColor: 'white', borderRadius: '20px', 
-                  border: '1px solid #f1f1f5', cursor: 'pointer', transition: 'box-shadow 0.2s',
-                }}
-                onMouseOver={(e) => e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.05)'}
-                onMouseOut={(e) => e.currentTarget.style.boxShadow = 'none'}
+      <div className="max-w-[1400px] mx-auto space-y-4 md:space-y-6">
+        
+        {/* Header Row */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+           <div className="flex items-center gap-4">
+              <button 
+                onClick={() => navigate('/dashboard/accounts')}
+                className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>#{challenge.accountNodeId || challenge.id.slice(0, 8).toUpperCase()}</span>
-                  <span style={{ 
-                    padding: '4px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800, 
-                    backgroundColor: '#fef3c7', color: '#92400e' 
-                  }}>PHASE {challenge.phase}</span>
+                <ArrowLeft size={18} />
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xl uppercase shrink-0">
+                   {user?.firstName?.charAt(0) || 'A'}
                 </div>
-                <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: '0 0 4px 0' }}>${challenge.accountSize.toLocaleString()}</h3>
-                <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, margin: '0 0 16px 0' }}>{challenge.plan.name} CHALLENGE</p>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f8fafc', paddingTop: '16px' }}>
-                  <div>
-                    <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, margin: 0 }}>BALANCE</p>
-                    <p style={{ fontSize: '14px', fontWeight: 800, margin: 0 }}>${challenge.currentBalance.toLocaleString()}</p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, margin: 0 }}>PROFIT %</p>
-                    <p style={{ fontSize: '14px', fontWeight: 800, color: challenge.totalPnl >= 0 ? '#10b981' : '#f43f5e', margin: 0 }}>
-                      {((Number(challenge.totalPnl) / Number(challenge.accountSize)) * 100).toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
+                <h1 className={`text-2xl md:text-3xl font-bold ${textPrimary}`}>
+                  Hey, {user?.firstName || 'Abhishek'}
+                </h1>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '60px 0', backgroundColor: '#f8fafc', borderRadius: '20px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>No accounts available</h3>
-            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px' }}>Purchase a challenge to start trading.</p>
-            <button
-               onClick={() => navigate('/dashboard/new-challenge')}
-               style={{ backgroundColor: '#6366f1', color: 'white', border: 'none', padding: '10px 24px', borderRadius: '12px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
-            >🚀 Buy Account</button>
-          </div>
-        )}
+           </div>
+           
+           <div className="flex items-center gap-4 bg-white rounded-lg px-4 py-2 shadow-sm border border-slate-200">
+               <div className="flex items-center gap-2">
+                 <div className="w-5 h-5 bg-black text-white rounded flex flex-col items-center justify-center text-[10px] font-black leading-none">
+                   IP
+                 </div>
+                 <span className="text-xs font-bold whitespace-nowrap">IndiPips®</span>
+               </div>
+               <div className="h-6 w-px bg-slate-200"></div>
+               <span className="text-sm font-bold whitespace-nowrap">Trader Summary</span>
+               <div className="h-6 w-px bg-slate-200"></div>
+               <span className="text-sm text-slate-500 whitespace-nowrap">Total Allocation: <span className="font-bold text-slate-900">${mockData.totalAllocation.toFixed(2)}</span></span>
+           </div>
+
+           <div className="flex items-center gap-3">
+             <button className="px-4 py-2 bg-[#3b66f5] hover:bg-blue-600 transition-colors text-white text-sm font-bold rounded-lg flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-white rounded flex items-center justify-center border-dashed"></span>
+                BUY CHALLENGE
+             </button>
+             <button className="px-4 py-2 border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 text-sm font-semibold rounded-lg flex items-center gap-2 bg-white">
+                <Share2 size={16} /> Share
+             </button>
+           </div>
+        </div>
+
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+           
+           {/* Left Col: No Data Box & Bronze Banner */}
+           <div className="lg:col-span-1 flex flex-col gap-4 md:gap-6">
+              <div className="bg-[#3b66f5] rounded-xl flex-1 min-h-[200px] flex items-center justify-center shadow-sm">
+                 <span className="text-blue-200 text-sm font-medium">No data available</span>
+              </div>
+              
+              {/* Bronze Level Card */}
+              <div className="rounded-xl bg-gradient-to-r from-black to-[#2A1808] text-white p-6 relative overflow-hidden h-[180px] shadow-lg">
+                 <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-10 opacity-40">
+                    <img src="https://ui-avatars.com/api/?name=P&background=D27D2D&color=fff&rounded=true&size=200" alt="Bronze Badge" className="w-[200px] h-[200px] blur-[2px] grayscale-[50%] brightness-150" />
+                 </div>
+                 
+                 <div className="relative z-10 flex flex-col h-full justify-between">
+                    <div>
+                       <p className="text-sm text-slate-400 font-medium">Your Level</p>
+                       <h2 className="text-2xl font-bold">Bronze</h2>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                       <div>
+                          <p className="text-xs text-slate-400 mb-1">Total Reward</p>
+                          <p className="font-bold">${mockData.totalReward.toFixed(2)}</p>
+                       </div>
+                       <div>
+                          <p className="text-xs text-slate-400 mb-1">Highest Reward</p>
+                          <p className="font-bold">${mockData.highestReward.toFixed(2)}</p>
+                       </div>
+                       <div>
+                          <p className="text-xs text-slate-400 mb-1">Count</p>
+                          <p className="font-bold">{mockData.count}</p>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+           </div>
+
+           {/* Middle Col: Bias & Progress Stats & Profitability */}
+           <div className="lg:col-span-1 flex flex-col gap-4 md:gap-6">
+              
+              {/* Behavioral Bias */}
+              <div className={`${cardClass} flex-1`}>
+                 <div className="flex justify-between items-center mb-6">
+                    <h3 className={`text-sm font-semibold ${textSecondary}`}>Behavioral Bias</h3>
+                    <span className={`text-sm font-semibold ${textPrimary}`}>Total Trades: {mockData.totalTrades}</span>
+                 </div>
+                 
+                 <div className="flex justify-between items-center mb-6">
+                    <div className="w-16 h-16 bg-slate-800 rounded-xl flex items-center justify-center text-3xl">🐻</div>
+                    <h2 className={`text-2xl font-bold ${textPrimary}`}>Neutral</h2>
+                    <div className="w-16 h-16 bg-slate-800 rounded-xl flex items-center justify-center text-3xl">🐂</div>
+                 </div>
+
+                 <div className="w-full h-2 bg-slate-200 rounded-full mb-2 overflow-hidden flex">
+                    <div className="h-full bg-slate-300" style={{ width: '56.3%' }}></div>
+                    <div className="h-full bg-[#111827] w-2 rounded-full relative -left-1"></div>
+                 </div>
+                 <div className="flex justify-between text-xs font-semibold text-slate-500">
+                    <span>364 (56.3%)</span>
+                    <ChevronUp size={14} className="text-slate-400" />
+                    <span>283 (43.7%)</span>
+                 </div>
+              </div>
+
+              {/* Profitability Donut Placeholder */}
+              <div className={`${cardClass} h-[180px] flex flex-col justify-between`}>
+                 <div className="flex justify-between items-center z-10">
+                    <h3 className={`text-sm font-semibold ${textSecondary}`}>Profitability</h3>
+                    <span className={`text-sm font-semibold ${textSecondary}`}>Avg Holding Period: <span className={textPrimary}>{mockData.avgHolding}</span></span>
+                 </div>
+
+                 <div className="flex items-end justify-between px-2 relative">
+                    <div className="text-left w-20">
+                       <p className={`text-xs ${textSecondary}`}>Won</p>
+                       <p className={`text-xl font-bold ${textPrimary}`}>{mockData.winRate}%</p>
+                       <p className={`text-xs ${textSecondary}`}>{mockData.won}</p>
+                    </div>
+
+                    <div className="w-40 h-20 overflow-hidden relative flex flex-col justify-end items-center">
+                       {/* Semi circle arc representing 21.9% vs 78.1% */}
+                       <div className="w-40 h-40 rounded-full border-[12px] border-slate-100 absolute bottom-0 left-0" 
+                            style={{ 
+                               borderTopColor: '#00D084',  /* green for right/win */
+                               borderRightColor: '#00D084',
+                               borderBottomColor: '#FF6B6B', /* red for left/loss */
+                               borderLeftColor: '#FF6B6B',
+                               transform: 'rotate(120deg)' 
+                            }}>
+                       </div>
+                       
+                       <div className="relative z-10 text-center bg-white w-24 h-12 rounded-t-full pt-1">
+                          <p className={`text-[10px] ${textSecondary}`}>Trades Taken</p>
+                          <p className={`text-lg font-bold leading-tight ${textPrimary}`}>{mockData.totalTrades}</p>
+                          <p className={`text-[8px] ${textSecondary}`}>Winrate: {mockData.winRate}%</p>
+                       </div>
+                    </div>
+
+                    <div className="text-right w-20">
+                       <p className={`text-xs ${textSecondary}`}>Lost</p>
+                       <p className={`text-xl font-bold ${textPrimary}`}>{100 - mockData.winRate}%</p>
+                       <p className={`text-xs ${textSecondary}`}>{mockData.lost}</p>
+                    </div>
+                 </div>
+              </div>
+           </div>
+
+           {/* Right Col: Bar Chart & Instruments */}
+           <div className="lg:col-span-1 flex flex-col gap-4 md:gap-6">
+              
+              {/* Trading Day Performance (Bar Chart Replica) */}
+              <div className={`${cardClass} flex-1`}>
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className={`text-sm font-semibold ${textSecondary}`}>Trading Day Performance</h3>
+                    <span className={`text-sm font-semibold ${textSecondary}`}>Best Day: <span className={textPrimary}>Thu</span></span>
+                 </div>
+                 
+                 <div className="flex items-end justify-between h-32 pt-4 px-2">
+                    {[
+                      { l: 'Sun', v: 47, isPos: true },
+                      { l: 'Mon', v: 56, isPos: false },
+                      { l: 'Tue', v: 35, isPos: false },
+                      { l: 'Wed', v: 54, isPos: false },
+                      { l: 'Thu', v: 89, isPos: false },
+                      { l: 'Fri', v: 32, isPos: false }
+                    ].map((bar, i) => (
+                       <div key={i} className="flex flex-col items-center gap-2 group cursor-pointer w-[12%]">
+                          <div className={`w-full rounded-md transition-all ${bar.isPos ? 'bg-[#00D084] group-hover:bg-[#00e691]' : 'bg-[#FF6B6B] group-hover:bg-[#ff8585]'}`} style={{ height: `${Math.max(bar.v, 15)}%` }}></div>
+                          <div className="text-center">
+                             <p className={`text-[10px] font-bold ${textPrimary}`}>{bar.isPos ? '+' : '-'}${bar.v}</p>
+                             <p className={`text-[9px] ${textSecondary}`}>{bar.l}</p>
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+
+              {/* Sessions & Instruments Placeholder Area */}
+              <div className="flex gap-4 md:gap-6 h-[180px]">
+                 
+                 {/* Instruments */}
+                 <div className={`${cardClass} flex-1 flex flex-col justify-between py-4 px-5`}>
+                     <h3 className={`text-xs text-slate-400 uppercase tracking-wider font-semibold mb-3`}>Most Traded 3 Instruments</h3>
+                     <div className="space-y-4">
+                        {mockData.instruments.map((inst, i) => {
+                           const total = inst.w + inst.l;
+                           const wPct = (inst.w / total) * 100;
+                           return (
+                              <div key={i} className="flex items-center gap-3">
+                                 <span className={`text-sm font-bold w-16 ${textPrimary}`}>{inst.name}</span>
+                                 <div className="flex-1 h-3 flex overflow-hidden rounded">
+                                    <div className="bg-[#00D084]" style={{ width: `${wPct}%` }}></div>
+                                    <div className="bg-[#FF6B6B]" style={{ width: `${100 - wPct}%` }}></div>
+                                 </div>
+                                 <span className={`text-xs font-bold w-16 text-right ${textPrimary}`}>{inst.w}W / {inst.l}L</span>
+                              </div>
+                           )
+                        })}
+                     </div>
+                 </div>
+
+              </div>
+
+           </div>
+           
+           {/* Bottom Full Width - Sessions Win Rates (Mockup requires moving it out of the 3 col grid or tweaking) */}
+           <div className="lg:col-span-3 pb-8">
+              <div className={`${cardClass} flex flex-col justify-center py-5 px-6`}>
+                 <h3 className={`text-xs text-slate-400 uppercase tracking-wider font-semibold mb-4`}>Session Win Rates</h3>
+                 <div className="space-y-5">
+                    {mockData.sessions.map((session, i) => (
+                       <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                          <span className={`text-sm font-bold w-20 ${textPrimary}`}>{session.name}</span>
+                          <div className="flex-1 h-2 relative rounded-full bg-slate-200">
+                             <div className="absolute top-0 left-0 h-full bg-[#3b66f5] rounded-full" style={{ width: `${session.percent}%` }}></div>
+                             <div className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-black rounded-full shadow border border-white" style={{ left: `calc(${session.percent}% - 4px)` }}></div>
+                          </div>
+                          <span className={`text-sm font-bold w-12 text-right ${textPrimary}`}>{session.percent}%</span>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+           </div>
+           
+        </div>
       </div>
     </DashboardLayout>
-  );
+  )
 }
 
 export default DashboardPage

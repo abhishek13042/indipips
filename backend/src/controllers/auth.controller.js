@@ -1,7 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { z } = require('zod');
 const prisma = require('../utils/prisma');
+
 // ── Generate unique referral code ──────────────────
 function generateReferralCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -34,6 +36,7 @@ const cookieOptions = {
   sameSite: 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
 };
+
 // ── REGISTER ───────────────────────────────────────
 const registerSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
@@ -305,6 +308,75 @@ const logout = (req, res) => {
   res.json({ success: true, message: 'Logged out successfully.' });
 };
 
+// ── FORGOT PASSWORD ────────────────────────────
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.json({ success: true, message: 'If this email exists, a reset link has been sent.' });
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const tokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: resetTokenHash,
+        passwordResetExpiry: tokenExpiry
+      }
+    });
+
+    console.log(`⚠️ Password reset token for ${email}: ${resetToken}`);
+
+    res.json({
+      success: true,
+      message: 'Password reset link sent to your email.',
+      ...(process.env.NODE_ENV !== 'production' && { devToken: resetToken })
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+// ── RESET PASSWORD ─────────────────────────────
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ success: false, message: 'Token and new password are required.' });
+    if (newPassword.length < 8) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await prisma.user.findFirst({
+      where: {
+        passwordResetToken: tokenHash,
+        passwordResetExpiry: { gt: new Date() }
+      }
+    });
+
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpiry: null
+      }
+    });
+
+    res.json({ success: true, message: 'Password reset successfully. Please log in.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
 // ── GOOGLE CALLBACK ───────────────────────────────
 const googleCallback = async (req, res) => {
   try {
@@ -327,4 +399,4 @@ const googleCallback = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getProfile, refreshToken, logout, googleCallback };
+module.exports = { register, login, getProfile, refreshToken, logout, googleCallback, forgotPassword, resetPassword };

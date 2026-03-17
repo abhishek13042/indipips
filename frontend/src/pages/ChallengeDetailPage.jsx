@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  ArrowLeft, 
+  Activity, 
+  Target, 
+  AlertTriangle, 
+  TrendingDown, 
+  Copy, 
+  ExternalLink,
+  ChevronRight,
+  Wallet,
+  Clock,
+  ShieldAlert
+} from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import api from '../api';
 
@@ -36,25 +50,23 @@ const ChallengeDetailPage = () => {
       } catch (err) {
         console.warn('API fetch failed, switching to mock data for verification.');
         const mockAll = [
-          { id: '11740829', accountNodeId: 'IP-11740829', accountSize: 5000, currentBalance: 4503.61, totalPnl: -496.39, phase: 1, status: 'ACTIVE', plan: { name: 'Student' } },
-          { id: '100889987', accountNodeId: 'IP-100889987', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } },
-          { id: '11359181', accountNodeId: 'IP-11359181', accountSize: 5000, currentBalance: 4499.84, totalPnl: -500.16, phase: 1, status: 'ACTIVE', plan: { name: 'Student' } }
+          { id: '11740829', accountNodeId: 'IP-A992', accountSize: 5000, currentBalance: 4503.61, totalPnl: -496.39, phase: 1, status: 'ACTIVE', plan: { name: 'Student' } },
+          { id: '100889987', accountNodeId: 'IP-X889', accountSize: 100000, currentBalance: 94585.00, totalPnl: -5415.00, phase: 1, status: 'ACTIVE', plan: { name: 'Competition' } },
+          { id: '11359181', accountNodeId: 'IP-B331', accountSize: 5000, currentBalance: 5499.84, totalPnl: 499.84, phase: 1, status: 'ACTIVE', plan: { name: 'Student' } }
         ];
+        
+        let found = mockAll.find(c => c.id === id);
+        if (!found) found = mockAll[1];
+
         setAllChallenges(mockAll);
         setChallenge({
-          id: id || mockAll[1].id,
-          accountNodeId: 'IP-100889987',
-          accountSize: 100000,
-          currentBalance: 94585.00,
-          totalPnl: -5415.00,
+          ...found,
           dailyPnl: -450.25,
-          phase: 1,
-          status: 'ACTIVE',
-          profitPercentage: -5.41,
+          profitPercentage: (found.totalPnl / found.accountSize) * 100,
           dailyLossPercentage: 0.45,
           drawdownPercentage: 5.42,
           plan: {
-            name: 'Competition',
+            ...found.plan,
             challengeType: 'FUNDED',
             profitTarget: 10,
             dailyLossLimit: 5,
@@ -89,24 +101,24 @@ const ChallengeDetailPage = () => {
     }
   };
 
+  const handleConnectBroker = async () => {
+    try {
+      const { data } = await api.get('/upstox/login');
+      if (data.success && data.data.loginUrl) {
+        window.location.href = data.data.loginUrl;
+      }
+    } catch (err) {
+      alert('Failed to initiate broker connection.');
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
-        <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div className="spinner" style={{ 
-              border: '3px solid #f1f1f5', 
-              borderTop: '3px solid #4338ca', 
-              borderRadius: '50%', 
-              width: '40px', 
-              height: '40px', 
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px'
-            }} />
-            <p style={{ color: '#4338ca', fontWeight: 800, fontSize: '15px' }}>Syncing Matrix State...</p>
-          </div>
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-12 h-12 border-4 border-green-400/30 border-t-green-400 rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-400 font-medium animate-pulse">Syncing Matrix State...</p>
         </div>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </DashboardLayout>
     );
   }
@@ -114,53 +126,73 @@ const ChallengeDetailPage = () => {
   if (!challenge) return null;
 
   const chartData = [
-    { name: 'Day 1', equity: 100000 },
-    { name: 'Day 2', equity: 98000 },
-    { name: 'Day 3', equity: 99500 },
-    { name: 'Day 4', equity: 96000 },
-    { name: 'Day 5', equity: 94585 }
+    { name: 'Day 1', equity: challenge.accountSize },
+    { name: 'Day 2', equity: challenge.accountSize * 0.98 },
+    { name: 'Day 3', equity: challenge.accountSize * 0.995 },
+    { name: 'Day 4', equity: challenge.accountSize * 0.96 },
+    { name: 'Day 5', equity: challenge.currentBalance }
   ];
+
+  const profitAmount = Number(challenge.totalPnl);
+  const isProfitable = profitAmount >= 0;
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+  };
 
   return (
     <DashboardLayout>
-      <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
         
-        {/* Bespoke Account Switcher Sidebar */}
-        <aside style={{ width: '300px', flexShrink: 0 }}>
-          <div style={{ 
-            backgroundColor: '#f8fafc', borderRadius: '24px', padding: '24px', border: '1px solid #e2e8f0',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.02)'
-          }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#1e1b4b', marginBottom: '20px', letterSpacing: '0.5px' }}>MY MATRIX HUB</h3>
+        {/* Account Switcher Sidebar */}
+        <aside className="w-full lg:w-80 flex-shrink-0">
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-black border border-gray-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-green-400/5 rounded-full blur-[50px] pointer-events-none"></div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6 px-2">Matrix Hub</h3>
+            
+            <div className="flex flex-col gap-3 relative z-10">
               {allChallenges.map((acc) => {
                 const isActive = acc.id === challenge.id;
+                const accProfit = Number(acc.totalPnl);
+                
                 return (
                   <div 
                     key={acc.id}
                     onClick={() => navigate(`/dashboard/challenges/${acc.id}`)}
-                    style={{
-                      padding: '16px', borderRadius: '18px', cursor: 'pointer',
-                      background: isActive ? 'linear-gradient(135deg, #4338ca 0%, #312e81 100%)' : 'white',
-                      border: isActive ? 'none' : '1px solid #f1f5f9',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      boxShadow: isActive ? '0 10px 20px rgba(67, 56, 202, 0.2)' : 'none',
-                    }}
-                    onMouseOver={(e) => !isActive && (e.currentTarget.style.transform = 'translateX(4px)')}
-                    onMouseOut={(e) => !isActive && (e.currentTarget.style.transform = 'translateX(0)')}
+                    className={`p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${
+                      isActive 
+                        ? 'bg-gray-900 border-green-400/30 shadow-[0_0_20px_rgba(74,222,128,0.1)]' 
+                        : 'bg-black border-gray-800 hover:border-gray-600 hover:bg-gray-900/50'
+                    }`}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 800, color: isActive ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>#{acc.accountNodeId || acc.id.slice(0, 8).toUpperCase()}</span>
-                      <span style={{ 
-                        fontSize: '9px', fontWeight: 900, padding: '2px 8px', 
-                        backgroundColor: isActive ? 'rgba(255,255,255,0.15)' : '#fef2f2', 
-                        color: isActive ? 'white' : '#ef4444', borderRadius: '6px' 
-                      }}>LIVE</span>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className={`text-xs font-bold ${isActive ? 'text-green-400' : 'text-gray-500'}`}>
+                        #{acc.accountNodeId || acc.id.slice(0, 8).toUpperCase()}
+                      </span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                        isActive ? 'bg-green-400/10 text-green-400' : 'bg-gray-800 text-gray-400'
+                      }`}>
+                        LIVE
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <p style={{ fontSize: '15px', fontWeight: 900, color: isActive ? 'white' : '#1e1b4b', margin: 0 }}>${acc.currentBalance.toLocaleString()}</p>
-                      <p style={{ fontSize: '11px', fontWeight: 800, color: isActive ? '#34d399' : '#10b981', margin: 0 }}>{((acc.totalPnl / acc.accountSize) * 100).toFixed(1)}%</p>
+                    <div className="flex justify-between items-baseline">
+                      <p className={`text-lg font-black font-outfit ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                        ${acc.currentBalance.toLocaleString()}
+                      </p>
+                      <p className={`text-xs font-bold ${accProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {((accProfit / acc.accountSize) * 100).toFixed(1)}%
+                      </p>
                     </div>
                   </div>
                 );
@@ -169,258 +201,285 @@ const ChallengeDetailPage = () => {
 
             <button
               onClick={() => navigate('/dashboard/new-challenge')}
-              style={{
-                width: '100%', marginTop: '24px', backgroundColor: '#eef2ff', color: '#4338ca',
-                border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 800, fontSize: '13px',
-                cursor: 'pointer', transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e0e7ff'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#eef2ff'}
+              className="w-full mt-6 bg-gray-900 text-white border border-gray-800 hover:border-gray-600 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
             >
-              + NEW ACCOUNT
+              + Parse New Node
             </button>
-          </div>
+          </motion.div>
         </aside>
 
         {/* Main Account View */}
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              <div style={{ 
-                width: '100%', padding: '12px 20px', background: 'linear-gradient(90deg, #f1f5f9 0%, #ffffff 100%)', 
-                borderRadius: '16px', borderLeft: '4px solid #4338ca' 
-              }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#1e1b4b', margin: 0 }}>{challenge.plan.name} Challenge Prototype</h2>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>#{challenge.accountNodeId || challenge.id.toUpperCase()}</span>
-                  <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#cbd5e1', alignSelf: 'center' }} />
-                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca' }}>PHASE {challenge.phase}</span>
-                </div>
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="flex-1 w-full"
+        >
+          {/* Header Row */}
+          <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => navigate('/dashboard')}
+                className="w-10 h-10 rounded-full bg-gray-900 border border-gray-800 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              <div>
+                <h2 className="text-2xl font-black text-white font-outfit flex items-center gap-3">
+                  {challenge.plan.name} Evaluation
+                  <span className="px-3 py-1 bg-gray-900 border border-gray-800 text-gray-300 text-xs font-bold rounded-lg tracking-widest font-inter">
+                    PHASE {challenge.phase}
+                  </span>
+                </h2>
+                <p className="text-sm text-gray-500 font-medium mt-1">
+                  Node: <span className="text-green-400">{challenge.accountNodeId || challenge.id.toUpperCase()}</span>
+                </p>
               </div>
             </div>
+
             {payoutEligible?.isEligible && (
               <button 
                 onClick={() => setShowPayoutModal(true)}
-                style={{
-                  backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px 24px', 
-                  borderRadius: '16px', fontWeight: 900, fontSize: '13px', cursor: 'pointer',
-                  boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: 'all 0.3s ease'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                className="px-6 py-3 rounded-xl bg-green-400 text-black font-black text-sm shadow-[0_0_20px_rgba(74,222,128,0.2)] hover:shadow-[0_0_30px_rgba(74,222,128,0.4)] transition-all hover:-translate-y-1 flex items-center gap-2"
               >
-                💰 WITHDRAW PROFIT
+                <Wallet size={16} /> WITHDRAW PROFIT
               </button>
             )}
-          </div>
+          </motion.div>
 
           {/* Stats Cluster */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
+          <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
              {[
-               { label: 'EQUITY (NETT)', value: `$${challenge.currentBalance.toLocaleString()}`, icon: '💎' },
-               { label: 'BALANCE (REAL)', value: `$${challenge.currentBalance.toLocaleString()}`, icon: '🏦' },
-               { label: 'VELOCITY (P&L)', value: `-$${Math.abs(challenge.totalPnl).toLocaleString()}`, color: '#ef4444', icon: '📉' },
-               { label: 'INTRADAY', value: `-$${Math.abs(challenge.dailyPnl).toLocaleString()}`, color: '#ef4444', icon: '🕒' },
-             ].map((stat, i) => (
-               <div key={i} style={{ 
-                 backgroundColor: 'white', border: '1px solid #f1f5f9', borderRadius: '24px', padding: '24px',
-                 boxShadow: '0 10px 20px rgba(0,0,0,0.01)'
-               }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, margin: 0 }}>{stat.label}</p>
-                    <span style={{ fontSize: '16px' }}>{stat.icon}</span>
-                  </div>
-                  <p style={{ fontSize: '22px', fontWeight: 900, color: stat.color || '#1e1b4b', margin: 0 }}>{stat.value}</p>
-               </div>
-             ))}
-          </div>
+               { label: 'EQUITY (NETT)', value: `$${challenge.currentBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}`, icon: Activity, color: 'text-white' },
+               { label: 'BALANCE (REAL)', value: `$${challenge.accountSize.toLocaleString(undefined, {minimumFractionDigits: 2})}`, icon: Wallet, color: 'text-gray-300' },
+               { label: 'VELOCITY (P&L)', value: `${isProfitable ? '+' : ''}$${profitAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}`, icon: isProfitable ? Target : TrendingDown, color: isProfitable ? 'text-green-400' : 'text-red-400' },
+               { label: 'INTRADAY P&L', value: `${challenge.dailyPnl >= 0 ? '+' : ''}$${Number(challenge.dailyPnl).toLocaleString()}`, icon: Clock, color: challenge.dailyPnl >= 0 ? 'text-green-400' : 'text-red-400' },
+             ].map((stat, i) => {
+               const Icon = stat.icon;
+               return (
+                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{stat.label}</p>
+                      <Icon size={16} className="text-gray-600" />
+                    </div>
+                    <p className={`text-2xl font-black font-outfit ${stat.color} truncate`}>{stat.value}</p>
+                 </div>
+               );
+             })}
+          </motion.div>
 
-          {/* Performance Curves */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '24px', marginBottom: '40px' }}>
-            <div style={{ 
-              backgroundColor: 'white', borderRadius: '32px', padding: '32px', border: '1px solid #f1f5f9',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.02)'
-            }}>
-               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
-                 <h3 style={{ fontSize: '17px', fontWeight: 900, color: '#1e1b4b', margin: 0 }}>Equity Trajectory</h3>
-                 <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                    <button style={{ padding: '4px 12px', border: 'none', background: 'white', borderRadius: '8px', fontSize: '11px', fontWeight: 800, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>Live</button>
-                    <button style={{ padding: '4px 12px', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: '11px', fontWeight: 800 }}>Mtg</button>
+          {/* Charts & Vitals */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            
+            {/* Chart Area */}
+            <motion.div variants={itemVariants} className="lg:col-span-2 bg-black border border-gray-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-green-400/5 rounded-full blur-[100px] pointer-events-none"></div>
+               
+               <div className="flex justify-between items-center mb-8 relative z-10">
+                 <h3 className="text-lg font-black text-white font-outfit">Equity Trajectory</h3>
+                 <div className="flex bg-gray-900 border border-gray-800 p-1 rounded-xl">
+                    <button className="px-4 py-1.5 rounded-lg bg-green-400/10 text-green-400 text-xs font-bold border border-green-400/20">Live</button>
+                    <button className="px-4 py-1.5 rounded-lg text-gray-500 text-xs font-bold hover:text-white transition-colors">Sim</button>
                  </div>
                </div>
-               <div style={{ height: '320px' }}>
+
+               <div className="h-72 w-full relative z-10">
                  <ResponsiveContainer width="100%" height="100%">
-                   <AreaChart data={chartData}>
+                   <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                      <defs>
-                       <linearGradient id="colorBespoke" x1="0" y1="0" x2="0" y2="1">
-                         <stop offset="5%" stopColor="#4338ca" stopOpacity={0.15}/>
-                         <stop offset="95%" stopColor="#4338ca" stopOpacity={0}/>
+                       <linearGradient id="colorGreen" x1="0" y1="0" x2="0" y2="1">
+                         <stop offset="5%" stopColor="#4ade80" stopOpacity={0.2}/>
+                         <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
                        </linearGradient>
                      </defs>
-                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1f2937" />
                      <XAxis dataKey="name" hide />
-                     <YAxis hide domain={['auto', 'auto']} />
+                     <YAxis hide domain={['dataMin - 1000', 'dataMax + 1000']} />
                      <Tooltip 
-                       contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}
-                       itemStyle={{ fontWeight: 800, fontSize: '13px' }}
+                       contentStyle={{ backgroundColor: '#111827', borderRadius: '12px', border: '1px solid #1f2937', color: '#fff' }}
+                       itemStyle={{ fontWeight: 800, fontSize: '14px', color: '#4ade80' }}
+                       cursor={{ stroke: '#4ade80', strokeWidth: 1, strokeDasharray: '4 4' }}
                      />
-                     <Area type="monotone" dataKey="equity" stroke="#4338ca" strokeWidth={5} fillOpacity={1} fill="url(#colorBespoke)" />
+                     <Area type="monotone" dataKey="equity" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorGreen)" />
                    </AreaChart>
                  </ResponsiveContainer>
                </div>
-            </div>
+            </motion.div>
 
-            {/* Trading Vitals */}
-            <div style={{ 
-              backgroundColor: 'white', borderRadius: '32px', padding: '32px', border: '1px solid #f1f5f9',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.02)'
-            }}>
-              <h3 style={{ fontSize: '17px', fontWeight: 900, color: '#1e1b4b', marginBottom: '32px' }}>Logic Vitals</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                {[
-                  { label: 'Profit Target', val: 0, target: 10, color: '#4338ca' },
-                  { label: 'Daily Loss Barrier', val: 0.45, target: 5, color: '#ef4444' },
-                  { label: 'System Drawdown', val: 5.42, target: 10, color: '#f59e0b' },
-                ].map((obj, i) => (
-                  <div key={i}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#4b5563' }}>{obj.label}</span>
-                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#1e1b4b' }}>{obj.val}% / {obj.target}%</span>
-                    </div>
-                    <div style={{ height: '8px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{ width: `${(obj.val / obj.target) * 100}%`, height: '100%', backgroundColor: obj.color, boxShadow: `0 0 8px ${obj.color}55` }} />
-                    </div>
-                  </div>
-                ))}
+            {/* Trading Logic Vitals */}
+            <motion.div variants={itemVariants} className="bg-gray-900 border border-gray-800 rounded-3xl p-6 flex flex-col justify-between">
+              <div>
+                <h3 className="text-lg font-black text-white font-outfit mb-6 flex items-center gap-2">
+                  <ShieldAlert size={18} className="text-gray-400" /> Logic Vitals
+                </h3>
+                
+                <div className="space-y-6">
+                  {[
+                    { label: 'Profit Target', val: Math.max(0, challenge.profitPercentage || 0), target: challenge.plan.profitTarget, color: 'bg-green-400', glow: 'shadow-[0_0_10px_rgba(74,222,128,0.5)]' },
+                    { label: 'Daily Loss Barrier', val: challenge.dailyLossPercentage || 0, target: challenge.plan.dailyLossLimit, color: 'bg-red-500', glow: 'shadow-[0_0_10px_rgba(239,68,68,0.5)]' },
+                    { label: 'System Drawdown', val: challenge.drawdownPercentage || 0, target: challenge.plan.maxDrawdown, color: 'bg-yellow-400', glow: 'shadow-[0_0_10px_rgba(250,204,21,0.5)]' },
+                  ].map((obj, i) => {
+                    const percent = Math.min((obj.val / obj.target) * 100, 100);
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between mb-2">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{obj.label}</span>
+                          <span className="text-xs font-black text-white">{obj.val.toFixed(2)}% / {obj.target}%</span>
+                        </div>
+                        <div className="h-1.5 bg-black rounded-full overflow-hidden border border-gray-800">
+                          <div className={`h-full ${obj.color} ${obj.glow} rounded-full`} style={{ width: `${percent}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
               
-              <div style={{ 
-                marginTop: '40px', padding: '24px', backgroundColor: '#fdfdff', border: '1px solid #eef2ff', borderRadius: '24px' 
-              }}>
-                 <p style={{ fontSize: '11px', fontWeight: 900, color: '#4338ca', margin: '0 0 16px 0', letterSpacing: '1px' }}>SECURE ACCESS</p>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="mt-8 p-5 bg-black border border-gray-800 rounded-2xl relative overflow-hidden group">
+                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_2s_infinite]"></div>
+                 <p className="text-[10px] font-black text-gray-500 mb-4 tracking-widest uppercase">Platform Access</p>
+                 
+                 <div className="flex justify-between items-center mb-4">
                    <div>
-                     <p style={{ fontSize: '10px', color: '#94a3b8', margin: 0, fontWeight: 800 }}>Node ID:</p>
-                     <p style={{ fontSize: '18px', fontWeight: 900, color: '#1e1b4b', margin: 0 }}>{challenge.accountNodeId || 'IP-PENDING'}</p>
+                     <p className="text-[10px] text-gray-600 font-bold">Node ID / Alias:</p>
+                     <p className="text-sm font-black text-white font-outfit">{challenge.accountNodeId || 'IP-PENDING'}</p>
                    </div>
-                   <button style={{ backgroundColor: '#4338ca', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '12px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>COPY</button>
+                   <button className="w-8 h-8 rounded-lg bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-colors">
+                     <Copy size={14} />
+                   </button>
                  </div>
+
+                 <button 
+                   onClick={handleConnectBroker}
+                   className="w-full bg-white text-black font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
+                 >
+                   <ExternalLink size={16} /> Connect Broker
+                 </button>
               </div>
-            </div>
+            </motion.div>
           </div>
 
-          {/* Trade Matrix */}
-          <div style={{ 
-            backgroundColor: 'white', borderRadius: '32px', padding: '32px', border: '1px solid #f1f5f9',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.02)'
-          }}>
-             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
-               <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e1b4b', margin: 0 }}>Trade Matrix</h3>
-               <button style={{ color: '#4338ca', border: 'none', backgroundColor: 'transparent', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>Exploration View →</button>
+          {/* Trade Matrix Table */}
+          <motion.div variants={itemVariants} className="bg-black border border-gray-800 rounded-3xl p-6 shadow-xl overflow-hidden">
+             <div className="flex justify-between items-center mb-6">
+               <h3 className="text-lg font-black text-white font-outfit">Trade Matrix</h3>
+               <button className="text-green-400 text-xs font-bold hover:text-green-300 transition-colors flex items-center gap-1">
+                 View Full Log <ChevronRight size={14} />
+               </button>
              </div>
-             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-               <thead>
-                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #f1f5f9' }}>
-                   {['Asset', 'Execution', 'Size', 'Entry', 'Current', 'P&L'].map(h => (
-                     <th key={h} style={{ padding: '16px', fontSize: '11px', color: '#94a3b8', fontWeight: 900, letterSpacing: '0.5px' }}>{h.toUpperCase()}</th>
-                   ))}
-                 </tr>
-               </thead>
-               <tbody>
-                  {challenge.recentTrades.map((t, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #fafafa' }}>
-                      <td style={{ padding: '20px 16px', fontWeight: 900, fontSize: '15px', color: '#1e1b4b' }}>{t.instrument}</td>
-                      <td style={{ padding: '20px 16px' }}>
-                        <span style={{ 
-                          padding: '6px 12px', borderRadius: '10px', fontSize: '10px', fontWeight: 900, 
-                          backgroundColor: t.tradeType === 'BUY' ? '#ecfdf5' : '#fff1f2', 
-                          color: t.tradeType === 'BUY' ? '#10b981' : '#f43f5e',
-                          border: `1px solid ${t.tradeType === 'BUY' ? '#10b981' : '#f43f5e'}33`
-                        }}>{t.tradeType}</span>
-                      </td>
-                      <td style={{ padding: '20px 16px', fontWeight: 700, fontSize: '14px', color: '#4b5563' }}>{t.quantity} Units</td>
-                      <td style={{ padding: '20px 16px', fontWeight: 700, fontSize: '14px', color: '#64748b' }}>{t.entryPrice}</td>
-                      <td style={{ padding: '20px 16px', fontWeight: 700, fontSize: '14px', color: '#64748b' }}>{t.exitPrice}</td>
-                      <td style={{ padding: '20px 16px', fontWeight: 900, fontSize: '15px', color: t.pnl >= 0 ? '#10b981' : '#f43f5e' }}>{t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}</td>
-                    </tr>
-                  ))}
-               </tbody>
-             </table>
-          </div>
-        </div>
+             
+             <div className="overflow-x-auto">
+               <table className="w-full text-left border-collapse min-w-[600px]">
+                 <thead>
+                   <tr className="border-b border-gray-800">
+                     {['Asset', 'Type', 'Size', 'Entry', 'Current', 'P&L'].map(h => (
+                       <th key={h} className="pb-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">{h}</th>
+                     ))}
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-800/50">
+                    {challenge.recentTrades.map((t, i) => (
+                      <tr key={i} className="hover:bg-gray-900/30 transition-colors">
+                        <td className="py-4 font-black text-sm text-white">{t.instrument}</td>
+                        <td className="py-4">
+                          <span className={`px-3 py-1 text-[10px] font-black rounded-lg border ${
+                            t.tradeType === 'BUY' 
+                              ? 'bg-green-400/10 text-green-400 border-green-400/20' 
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}>
+                            {t.tradeType}
+                          </span>
+                        </td>
+                        <td className="py-4 font-bold text-xs text-gray-400">{t.quantity} Lots</td>
+                        <td className="py-4 font-medium text-xs text-gray-500">{t.entryPrice.toLocaleString()}</td>
+                        <td className="py-4 font-medium text-xs text-gray-500">{t.exitPrice.toLocaleString()}</td>
+                        <td className={`py-4 font-black text-sm ${t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                 </tbody>
+               </table>
+               {challenge.recentTrades.length === 0 && (
+                 <div className="py-12 text-center text-gray-500 text-sm font-medium border-b border-gray-800/50">
+                    No trade executions found in the matrix yet.
+                 </div>
+               )}
+             </div>
+          </motion.div>
+        </motion.div>
       </div>
 
-      {/* Payout Modal */}
-      {showPayoutModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-          backgroundColor: 'rgba(30, 27, 75, 0.4)', backdropFilter: 'blur(8px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white', borderRadius: '32px', width: '100%', maxWidth: '500px',
-            padding: '40px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            border: '1px solid #eef2ff'
-          }}>
-            <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#1e1b4b', marginBottom: '8px' }}>Withdraw Earnings</h2>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '32px' }}>Review your profit distribution before submitting the request.</p>
+      {/* Payout Modal - Glassmorphic */}
+      <AnimatePresence>
+        {showPayoutModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-40 h-40 bg-green-400/5 rounded-full blur-[50px] pointer-events-none"></div>
 
-            {payoutMessage ? (
-              <div style={{ 
-                padding: '20px', borderRadius: '20px', backgroundColor: payoutMessage.includes('success') ? '#ecfdf5' : '#fff1f2',
-                color: payoutMessage.includes('success') ? '#047857' : '#991b1b', fontWeight: 800, textAlign: 'center'
-              }}>
-                {payoutMessage}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#4b5563' }}>Total Account Profit</span>
-                  <span style={{ fontSize: '16px', fontWeight: 900, color: '#1e1b4b' }}>${payoutEligible?.breakdown?.totalProfit.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#94a3b8' }}>Trader Share ({payoutEligible?.breakdown?.splitPercent}%)</span>
-                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#1e1b4b' }}>${payoutEligible?.breakdown?.traderGrossShare.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#94a3b8' }}>TDS Deduction (10%)</span>
-                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#ef4444' }}>-${payoutEligible?.breakdown?.tdsAmount.toLocaleString()}</span>
-                </div>
-                <div style={{ 
-                  backgroundColor: '#fdfdff', padding: '24px', borderRadius: '24px', border: '1px solid #eef2ff',
-                  marginTop: '12px', textAlign: 'center'
-                }}>
-                  <p style={{ fontSize: '11px', fontWeight: 900, color: '#4338ca', margin: '0 0 8px 0', letterSpacing: '1px' }}>ESTIMATED NET PAYOUT</p>
-                  <p style={{ fontSize: '32px', fontWeight: 900, color: '#10b981', margin: 0 }}>${payoutEligible?.breakdown?.netPayout.toLocaleString()}</p>
-                </div>
+              <h2 className="text-2xl font-black text-white font-outfit mb-2">Withdraw Earnings</h2>
+              <p className="text-sm text-gray-400 mb-8 font-inter">Review your profit distribution before submitting the request to your linked Indian bank account.</p>
 
-                <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-                  <button 
-                    onClick={() => setShowPayoutModal(false)}
-                    style={{ 
-                      flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0',
-                      backgroundColor: 'white', color: '#64748b', fontWeight: 800, cursor: 'pointer' 
-                    }}
-                  >
-                    CANCEL
-                  </button>
-                  <button 
-                    onClick={handleRequestPayout}
-                    disabled={loading}
-                    style={{ 
-                      flex: 2, padding: '16px', borderRadius: '16px', border: 'none',
-                      backgroundColor: '#4338ca', color: 'white', fontWeight: 900, cursor: 'pointer',
-                      boxShadow: '0 10px 15px -3px rgba(67, 56, 202, 0.3)'
-                    }}
-                  >
-                    {loading ? 'PROCESSING...' : 'REQUEST WITHDRAWAL'}
-                  </button>
+              {payoutMessage ? (
+                <div className={`p-4 rounded-xl border font-bold text-sm text-center ${
+                  payoutMessage.includes('success') 
+                    ? 'bg-green-400/10 text-green-400 border-green-400/20' 
+                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                }`}>
+                  {payoutMessage}
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center pb-4 border-b border-gray-800">
+                    <span className="text-sm font-bold text-gray-400">Total Account Profit</span>
+                    <span className="text-lg font-black text-white">${payoutEligible?.breakdown?.totalProfit?.toLocaleString() || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold text-gray-400">Trader Share ({payoutEligible?.breakdown?.splitPercent || 80}%)</span>
+                    <span className="text-sm font-black text-white">${payoutEligible?.breakdown?.traderGrossShare?.toLocaleString() || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold text-gray-400">TDS Deduction (10%)</span>
+                    <span className="text-sm font-black text-red-400">-${payoutEligible?.breakdown?.tdsAmount?.toLocaleString() || '0.00'}</span>
+                  </div>
+                  
+                  <div className="bg-black border border-gray-800 p-6 rounded-2xl mt-6 text-center">
+                    <p className="text-[10px] font-black text-gray-500 tracking-widest mb-2">ESTIMATED NET PAYOUT</p>
+                    <p className="text-4xl font-black text-green-400 font-outfit">${payoutEligible?.breakdown?.netPayout?.toLocaleString() || '0.00'}</p>
+                  </div>
+
+                  <div className="flex gap-4 mt-8">
+                    <button 
+                      onClick={() => setShowPayoutModal(false)}
+                      className="flex-1 py-4 rounded-xl bg-gray-800 text-gray-300 font-bold hover:bg-gray-700 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={handleRequestPayout}
+                      disabled={loading}
+                      className="flex-[2] py-4 rounded-xl bg-green-400 text-black font-black flex items-center justify-center gap-2 hover:bg-green-300 transition-colors shadow-[0_0_20px_rgba(74,222,128,0.2)]"
+                    >
+                      {loading ? <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : 'Request Withdrawal'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </DashboardLayout>
   );
 };

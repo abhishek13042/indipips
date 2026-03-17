@@ -73,6 +73,14 @@ const requestPayout = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Challenge not found.' });
     }
 
+    // ✅ KYC Guard: Only VERIFIED traders can withdraw
+    if (challenge.user.kycStatus !== 'VERIFIED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Complete KYC verification before requesting a payout.'
+      });
+    }
+
     const profit = challenge.currentBalance - challenge.accountSize;
     if (profit < 10000n) {
       return res.status(400).json({ success: false, message: 'Minimum profit for payout is $100.' });
@@ -92,9 +100,6 @@ const requestPayout = async (req, res) => {
       }
     });
 
-    // Option: Reset challenge balance to account size after payout
-    // For now, we'll just keep it pending and an admin will process it.
-    
     res.json({
       success: true,
       message: 'Payout request submitted successfully.',
@@ -116,7 +121,7 @@ const getMyPayouts = async (req, res) => {
       where: { userId: req.userId },
       include: {
         challenge: {
-          select: { nodeAccountId: true }
+          select: { accountNodeId: true }  // ✅ Fixed: was `nodeAccountId` (wrong field name)
         }
       },
       orderBy: { requestedAt: 'desc' }

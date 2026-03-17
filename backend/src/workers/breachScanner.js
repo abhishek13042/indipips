@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const prisma = require('../utils/prisma');
 const { calculateBreach } = require('../utils/riskEngine');
 const { notifyBreach } = require('../services/notification.service');
+const priceFeed = require('../utils/priceFeed');
 
 /**
  * Breach Scanner Worker
@@ -33,11 +34,14 @@ const initBreachScanner = () => {
         // In reality, this would fetch live market prices.
         if (challenge.trades.length > 0) {
           const unrealizedPnl = challenge.trades.reduce((sum, trade) => {
-            // Simplified: Assuming current price = entry price for open trades in mock mode
-            // or use a small random fluctuation for "live" feel in dev
+            const livePrice = priceFeed.getPrice(trade.symbol);
+            if (livePrice) {
+              const tradePnl = (Number(livePrice) * 100 - Number(trade.entryPrice)) * trade.quantity;
+              return sum + (trade.tradeType === 'BUY' ? tradePnl : -tradePnl);
+            }
             return sum + Number(trade.pnl);
           }, 0);
-          currentEquity += unrealizedPnl;
+          currentEquity += unrealizedPnl / 100;
         }
 
         // Check for breaches

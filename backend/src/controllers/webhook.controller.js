@@ -1,7 +1,19 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Stripe = require('stripe');
 const prisma = require('../utils/prisma');
 
+// Lazy Stripe init — prevents crash when key is a placeholder
+const getStripe = () => {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key || key.includes('YOUR_')) return null;
+  return new Stripe(key);
+};
+
 const handleStripeWebhook = async (req, res) => {
+  const stripe = getStripe();
+  if (!stripe) {
+    return res.status(503).json({ success: false, message: 'Stripe not configured.' });
+  }
+
   const sig = req.headers['stripe-signature'];
   let event;
 

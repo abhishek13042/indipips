@@ -19,9 +19,11 @@ const tradeRoutes = require('./routes/trade.routes');
 const kycRoutes = require('./routes/kyc.routes');
 const adminRoutes = require('./routes/admin.routes');
 const payoutRoutes = require('./routes/payout.routes');
+const upstoxRoutes = require('./routes/upstox.routes');
 const { initBreachScanner } = require('./workers/breachScanner');
 const { initSnapshotWorker } = require('./workers/snapshotWorker');
 const { handleStripeWebhook } = require('./controllers/webhook.controller');
+const upstoxFeed = require('./services/upstoxFeed.service');
 
 const app = express();
 const server = http.createServer(app);
@@ -34,23 +36,54 @@ socketIO.init(server);
 initBreachScanner();
 initSnapshotWorker();
 
+// Note: upstoxFeed.connect() is called after a user successfully connects their
+// Upstox broker account. It is NOT started at server startup because it
+// requires a valid per-user access token.
+
 // ── Stripe Webhook (MUST be before express.json) ────
 app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
-// ── Middleware ──────────────────────────────────────
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per `window`
-  message: 'Too many requests from this IP, please try again after 15 minutes'
-});
+// ── Security Middleware ───────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://checkout.stripe.com"],
+      connectSrc: ["'self'", "https://api.upstox.com", "wss://api.upstox.com", "https://api.stripe.com", "https://api.razorpay.com"],
+      frameSrc: ["'self'", "https://checkout.stripe.com", "https://api.razorpay.com"],
+      imgSrc: ["'self'", "data:", "https://*.stripe.com", "https://*.razorpay.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+    },
+  },
+}));
 
-app.use(helmet());
+// Trust Proxy for Production (Heroku/Nginx)
+app.set('trust proxy', 1);
+
 app.use(cors({
   origin: process.env.APP_URL || 'http://localhost:5173',
   credentials: true
 }));
+
+// Global Rate Limiter
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: { success: false, message: 'Too many requests, please try again later.' }
+});
+
+// Auth & Payment Specific Limiter (Stricter)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: { success: false, message: 'Too many sensitive requests. Security lockout engaged.' }
+});
+
+app.use('/api/', globalLimiter);
+app.use('/api/v1/auth/', authLimiter);
+app.use('/api/v1/payments/', authLimiter);
 app.use(morgan('dev'));
-app.use(limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -66,6 +99,7 @@ app.use('/api/v1/trades', tradeRoutes);
 app.use('/api/v1/kyc', kycRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/payouts', payoutRoutes);
+app.use('/api/v1/upstox', upstoxRoutes);
 
 // ── Health Check ────────────────────────────────────
 app.get('/', (req, res) => {
@@ -82,6 +116,17 @@ app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found`
+  });
+});
+
+// ── Global Error Handler ────────────────────────────
+// Catches all unhandled async errors — prevents stack traces leaking to users
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled Error:', err.message);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'An unexpected error occurred.'
   });
 });
 

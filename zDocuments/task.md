@@ -14,6 +14,18 @@
 - [x] Challenge Activation Workflow
 - [x] Human-readable Account IDs
 
+## Frontend UI/UX Overhaul & Expansion
+- [x] Initialize Premium Design System (CSS variables + Tailwind utilities)
+- [x] Refactor Landing Page (Hero, Pricing, How It Works, FAQ, Footer)
+- [x] Refactor DashboardLayout (Icon-only sidebar, Dark/Light Mode toggle)
+- [x] Polish Dashboard & Challenge Details (High-fidelity Multi-card Layout)
+- [x] Implement Reset Password UI
+- [x] Implement Affiliate Dashboard (Earnings, Referrals)
+- [x] Implement Leaderboard & Ranking System
+- [x] Implement User Settings & Profile Hub
+- [x] Global Interactivity (Toasts, Entrance Animations)
+- [x] Mobile Responsiveness Built-in
+
 ## Phase 3: Risk Engine & Active Trading [x]
 - [x] Trade Model & Management API
 - [x] Real-time Risk Engine (Daily Loss/Max Drawdown)

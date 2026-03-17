@@ -1,7 +1,7 @@
 const express = require('express');
 const passport = require('passport');
 const router = express.Router();
-const { register, login, getProfile, refreshToken, logout } = require('../controllers/auth.controller');
+const { register, login, getProfile, refreshToken, logout, forgotPassword, resetPassword } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth.middleware');
 
 // ── Public Routes ──────────────────────────────────
@@ -9,6 +9,8 @@ router.post('/register', register);
 router.post('/login', login);
 router.post('/refresh-token', refreshToken);
 router.post('/logout', logout);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // ── Google OAuth Routes ───────────────────────────
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));

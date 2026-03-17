@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package com.upstox.marketdatafeeder.rpc.proto;
+
+message MarketDataFeed {
+  map<string, FeedData> feeds = 1;
+}
+
+message FeedData {
+  oneof Type {
+    LTP ltp = 1;
+    Full full = 2;
+  }
+}
+
+message LTP {
+  double last_price = 1;
+  int64 ltt = 2;
+}
+
+message Full {
+  double last_price = 1;
+  int64 ltt = 2;
+  int32 last_quantity = 3;
+  double open = 4;
+  double high = 5;
+  double low = 6;
+  double close = 7;
+  double vwap = 8;
+  int32 volume = 9;
+  double oi = 10;
+  double pclose = 11;
+  double poi = 12;
+  repeated Quote bids = 13;
+  repeated Quote asks = 14;
+}
+
+message Quote {
+  int32 quantity = 1;
+  double price = 2;
+  int32 orders = 3;
+}

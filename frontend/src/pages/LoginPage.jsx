@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Moon, Sun } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api'
 
 function LoginPage() {
   const navigate = useNavigate()
   const { login, user } = useAuth()
-  const [form, setForm] = useState({ email: '', password: '' })
+  const [form, setForm] = useState({ email: '', password: '', rememberMe: false })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isDarkMode, setIsDarkMode] = useState(true)
 
-  // Redirect if already logged in
   useEffect(() => {
     if (user) {
       navigate('/dashboard')
@@ -18,7 +19,8 @@ function LoginPage() {
   }, [user, navigate])
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setForm({ ...form, [e.target.name]: value })
   }
 
   const handleSubmit = async (e) => {
@@ -36,168 +38,133 @@ function LoginPage() {
     }
   }
 
+  const toggleTheme = () => setIsDarkMode(!isDarkMode)
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#fcfcfc',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: '"Inter", sans-serif',
-      padding: '24px'
-    }}>
-      {/* Logo Section */}
-      <div style={{ marginBottom: '40px', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: 900, color: '#0f172a', letterSpacing: '-1px' }}>
-          IndiPips <span style={{ color: '#2563eb' }}>®</span>
-        </h1>
-        <p style={{ color: '#64748b', marginTop: '8px', fontWeight: 600 }}>Sign in to your account</p>
+    <div className={`min-h-screen flex flex-col font-inter transition-colors duration-300 ${isDarkMode ? 'bg-[#0f141e] text-white' : 'bg-white text-slate-900'}`}>
+      
+      {/* Top Right Theme Toggle */}
+      <div className="absolute top-4 right-4 md:top-6 md:right-6">
+        <button 
+          onClick={toggleTheme}
+          className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:text-slate-900'}`}
+        >
+          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
       </div>
 
-      <div style={{
-        backgroundColor: 'white',
-        padding: '40px',
-        borderRadius: '20px',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
-        width: '100%',
-        maxWidth: '440px',
-        border: '1px solid #f1f5f9'
-      }}>
-        {error && (
-          <div style={{
-            backgroundColor: '#fef2f2',
-            color: '#dc2626',
-            padding: '12px 16px',
-            borderRadius: '10px',
-            marginBottom: '24px',
-            fontSize: '14px',
-            fontWeight: 600,
-            border: '1px solid #fee2e2'
-          }}>
-            {error}
-          </div>
-        )}
+      <div className="flex-1 flex flex-col justify-center items-center p-6 sm:p-12 relative z-10 w-full max-w-md mx-auto">
+        
+        {/* Logo Section */}
+        <div className="text-center mb-8 w-full flex flex-col items-center">
+          <Link to="/" className="flex items-center gap-2 mb-6 cursor-pointer">
+            <div className={`w-8 h-8 rounded flex items-center justify-center font-black ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}>
+              IP
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              IndiPips <span className="text-[10px] align-top">®</span>
+            </h1>
+          </Link>
+          <h2 className="text-2xl font-bold tracking-tight">Sign in to your account</h2>
+        </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
-              Email address
-            </label>
-            <input
-              type="email"
-              name="email"
-              placeholder="you@example.com"
-              value={form.email}
-              onChange={handleChange}
-              required
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                borderRadius: '10px',
-                border: '1.5px solid #e2e8f0',
-                outline: 'none',
-                fontSize: '15px',
-                transition: 'all 0.2s',
-                backgroundColor: '#f8fafc'
-              }}
-            />
-          </div>
+        {/* Auth Form */}
+        <div className="w-full">
+          
+          {error && (
+             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-semibold text-center">
+               {error}
+             </div>
+          )}
 
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Password</label>
-              <Link to="/forgot-password" style={{ fontSize: '13px', fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Email address</label>
+              <input
+                type="email"
+                name="email"
+                value={form.email}
+                onChange={handleChange}
+                required
+                className={`w-full rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-[#3b66f5] transition-shadow ${
+                  isDarkMode 
+                    ? 'bg-[#151b28] border border-slate-700 text-white placeholder-slate-500' 
+                    : 'bg-white border border-slate-300 text-slate-900 placeholder-slate-400 shadow-sm'
+                }`}
+                placeholder="nomad@indipips.com"
+              />
+            </div>
+
+            <div>
+               <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Password</label>
+               <input
+                 type="password"
+                 name="password"
+                 value={form.password}
+                 onChange={handleChange}
+                 required
+                 className={`w-full rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-[#3b66f5] transition-shadow ${
+                   isDarkMode 
+                     ? 'bg-[#151b28] border border-slate-700 text-white placeholder-slate-500' 
+                     : 'bg-white border border-slate-300 text-slate-900 placeholder-slate-400 shadow-sm'
+                 }`}
+                 placeholder="••••••••••••"
+               />
+            </div>
+            
+            <div className="flex items-center justify-between mt-2">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  name="rememberMe"
+                  checked={form.rememberMe}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded border-slate-600 text-[#3b66f5] focus:ring-[#3b66f5] bg-transparent"
+                />
+                <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-600 group-hover:text-slate-900'}`}>Remember Me</span>
+              </label>
+              
+              <Link to="/forgot-password" className="text-sm font-semibold text-[#3b66f5] hover:text-blue-500 transition-colors">
                 Forgot Password?
               </Link>
             </div>
-            <input
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              value={form.password}
-              onChange={handleChange}
-              required
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                borderRadius: '10px',
-                border: '1.5px solid #e2e8f0',
-                outline: 'none',
-                fontSize: '15px',
-                transition: 'all 0.2s',
-                backgroundColor: '#f8fafc'
-              }}
-            />
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-[#3b66f5] text-white font-semibold text-sm hover:bg-blue-600 transition-colors mt-2 flex justify-center items-center shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Sign in'}
+            </button>
+          </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className={`w-full border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}></div>
+            </div>
+            <div className="relative flex justify-center">
+              <span className={`px-4 text-sm ${isDarkMode ? 'bg-[#0f141e] text-slate-500' : 'bg-white text-slate-500'}`}>OR</span>
+            </div>
           </div>
 
           <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              backgroundColor: '#2563eb',
-              color: 'white',
-              padding: '14px',
-              borderRadius: '10px',
-              border: 'none',
-              fontWeight: 700,
-              fontSize: '15px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: '20px',
-              transition: 'all 0.2s'
-            }}
+            type="button"
+            onClick={() => window.location.href = 'http://localhost:5000/api/v1/auth/google'}
+            className={`w-full py-2.5 rounded-lg border font-semibold text-sm flex items-center justify-center gap-3 transition-colors ${
+              isDarkMode 
+                ? 'bg-[#151b28] border-slate-700 text-slate-200 hover:bg-slate-800' 
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm'
+            }`}
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/smartlock/google.svg" alt="Google" className="w-5 h-5" />
+            Continue with Google
           </button>
-        </form>
-
-        <div style={{ position: 'relative', textAlign: 'center', marginBottom: '20px' }}>
-          <hr style={{ border: '0', borderTop: '1px solid #e2e8f0' }} />
-          <span style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: 'white',
-            padding: '0 12px',
-            fontSize: '12px',
-            color: '#94a3b8',
-            fontWeight: 600
-          }}>OR</span>
         </div>
-
-        <button
-          type="button"
-          onClick={() => window.location.href = 'http://localhost:5000/api/v1/auth/google'}
-          style={{
-            width: '100%',
-            backgroundColor: 'white',
-            color: '#1e293b',
-            padding: '12px',
-            borderRadius: '10px',
-            border: '1.5px solid #e2e8f0',
-            fontWeight: 600,
-            fontSize: '14px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            transition: 'all 0.2s'
-          }}
-        >
-          <img 
-            src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/smartlock/google.svg" 
-            alt="Google" 
-            style={{ width: '18px', height: '18px' }} 
-          />
-          Continue with Google
-        </button>
-
-        <p style={{ textAlign: 'center', marginTop: '32px', fontSize: '14px', color: '#64748b', fontWeight: 500 }}>
-          Ready to trade? <Link to="/register" style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'none' }}>Create your account</Link>
+        
+        <p className={`text-center mt-8 text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Ready to trade? <Link to="/register" className="text-[#3b66f5] hover:text-blue-500 font-semibold transition-colors">Create your account</Link>
         </p>
+
       </div>
     </div>
   )

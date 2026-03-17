@@ -1,5 +1,16 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Stripe = require('stripe');
+const razorpayService = require('../services/razorpay.service');
+const auditLogger = require('../utils/auditLogger');
 const prisma = require('../utils/prisma');
+
+// Lazy Stripe initialization — prevents crash when STRIPE_SECRET_KEY is a placeholder
+const getStripe = () => {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key || key.includes('YOUR_')) {
+    return null; // Will be handled gracefully in each endpoint
+  }
+  return new Stripe(key);
+};
 
 // ── Create Stripe Checkout Session ────────────────
 const createCheckoutSession = async (req, res) => {
@@ -29,6 +40,13 @@ const createCheckoutSession = async (req, res) => {
 
     // Create Stripe Checkout Session
     try {
+      const stripe = getStripe();
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          message: 'Stripe payment gateway is not configured. Please add STRIPE_SECRET_KEY to .env file.'
+        });
+      }
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         mode: 'payment',
@@ -67,6 +85,14 @@ const createCheckoutSession = async (req, res) => {
         },
       });
 
+      // Audit Log: Payment Initiation
+      await auditLogger.logAction({
+        userId: req.userId,
+        action: 'PAYMENT_INITIATED',
+        amount: amountInSmallestUnit,
+        metadata: { gateway: 'stripe', planId }
+      });
+
       res.json({
         success: true,
         message: 'Checkout session created.',
@@ -78,7 +104,7 @@ const createCheckoutSession = async (req, res) => {
     } catch (stripeError) {
       console.error('Stripe Session Creation Error:', stripeError.message);
       
-      if (stripeError.message.includes('Invalid API Key') || process.env.STRIPE_SECRET_KEY.includes('YOUR_')) {
+      if (stripeError.message.includes('Invalid API Key')) {
         return res.status(400).json({
           success: false,
           message: 'Payment gateway is currently in configuration. Please contact support or check your environment variables.'
@@ -93,6 +119,52 @@ const createCheckoutSession = async (req, res) => {
       success: false,
       message: 'Failed to create payment session. Please try again.',
     });
+  }
+};
+
+// ── Create Razorpay Order ────────────────────────
+const createRazorpayOrder = async (req, res) => {
+  try {
+    const { planId } = req.body;
+    if (!planId) return res.status(400).json({ success: false, message: 'Plan ID is required.' });
+
+    const plan = await prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan || !plan.isActive) return res.status(404).json({ success: false, message: 'Plan not found.' });
+
+    const amountInPaise = Number(plan.challengeFee);
+    const order = await razorpayService.createOrder(amountInPaise / 100, `receipt_${Date.now()}`);
+
+    // Create pending payment record
+    await prisma.payment.create({
+      data: {
+        userId: req.userId,
+        amount: BigInt(amountInPaise),
+        currency: 'inr',
+        razorpayOrderId: order.id,
+        status: 'PENDING',
+      },
+    });
+
+    // Audit Log
+    await auditLogger.logAction({
+      userId: req.userId,
+      action: 'PAYMENT_INITIATED',
+      amount: amountInPaise,
+      metadata: { gateway: 'razorpay', planId, orderId: order.id }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency
+      }
+    });
+
+  } catch (error) {
+    console.error('Razorpay Session Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to initiate Razorpay payment.' });
   }
 };
 

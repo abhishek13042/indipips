@@ -1,5 +1,6 @@
 const prisma = require('../utils/prisma');
 const cache = require('../services/cache.service');
+const auditLogger = require('../utils/auditLogger');
 
 /**
  * Get Global Platform Stats
@@ -106,8 +107,105 @@ const updateChallengeStatus = async (req, res) => {
   }
 };
 
+/**
+ * Get All Pending Payouts
+ * GET /api/v1/admin/payouts
+ */
+const getAllPayouts = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const payouts = await prisma.payout.findMany({
+      where: { status: status || undefined },
+      include: {
+        user: { select: { fullName: true, email: true, bankAccount: true, bankIfsc: true } },
+        challenge: { select: { accountNodeId: true } }
+      },
+      orderBy: { requestedAt: 'desc' }
+    });
+
+    const formatted = payouts.map(p => ({
+      ...p,
+      amountRequested: Number(p.amountRequested) / 100,
+      amountAfterTds: Number(p.amountAfterTds) / 100
+    }));
+
+    res.json({ success: true, data: formatted });
+  } catch (error) {
+    console.error('Admin get payouts error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+};
+
+/**
+ * Approve a Payout
+ * PATCH /api/v1/admin/payouts/:id/approve
+ */
+const approvePayout = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { bankReference } = req.body;
+
+    const payout = await prisma.payout.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        adminId: req.userId,
+        bankReference: bankReference || null,
+        processedAt: new Date()
+      }
+    });
+
+    await auditLogger.logAction({
+      userId: payout.userId,
+      action: 'PAYOUT_APPROVED',
+      amount: Number(payout.amountAfterTds),
+      metadata: { adminId: req.userId, payoutId: id, bankReference }
+    });
+
+    res.json({ success: true, message: 'Payout approved successfully.', data: payout });
+  } catch (error) {
+    console.error('Admin approve payout error:', error);
+    res.status(500).json({ success: false, message: 'Failed to approve payout.' });
+  }
+};
+
+/**
+ * Reject a Payout
+ * PATCH /api/v1/admin/payouts/:id/reject
+ */
+const rejectPayout = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const payout = await prisma.payout.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        adminId: req.userId,
+        processedAt: new Date()
+      }
+    });
+
+    await auditLogger.logAction({
+      userId: payout.userId,
+      action: 'PAYOUT_REJECTED',
+      amount: Number(payout.amountRequested),
+      metadata: { adminId: req.userId, payoutId: id, reason }
+    });
+
+    res.json({ success: true, message: 'Payout rejected.', data: payout });
+  } catch (error) {
+    console.error('Admin reject payout error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reject payout.' });
+  }
+};
+
 module.exports = {
   getGlobalStats,
   getAllChallenges,
-  updateChallengeStatus
+  updateChallengeStatus,
+  getAllPayouts,
+  approvePayout,
+  rejectPayout
 };
