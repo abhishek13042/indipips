@@ -5,6 +5,7 @@ import { ChevronDown, Trash2, CheckCircle2, List, LayoutGrid, MoreVertical, Brie
 import DashboardLayout from '../layouts/DashboardLayout'
 import { useAuth } from '../context/AuthContext'
 import api from '../api'
+import { formatRupee } from '../utils/format'
 
 function AccountsPage() {
   const { user } = useAuth()
@@ -150,7 +151,7 @@ function AccountsPage() {
                       <span className="font-bold text-slate-900">#{acc.id}</span>
                     </div>
                     <div className="text-xs text-slate-500 font-medium">
-                      ${acc.size >= 1000 ? acc.size/1000 + 'K' : acc.size} • {acc.type} • {acc.role}
+                      {formatRupee(acc.size * 100)} • {acc.type} • {acc.role}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -169,7 +170,7 @@ function AccountsPage() {
                 <div className="grid grid-cols-2 gap-y-4 gap-x-2">
                    <div>
                      <p className="text-xs text-slate-500 mb-1">Balance</p>
-                     <p className="font-bold text-slate-900">${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                     <p className="font-bold text-slate-900">₹{acc.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                    </div>
                    <div>
                      {acc.target !== undefined ? (
@@ -192,7 +193,7 @@ function AccountsPage() {
                    <div>
                      <p className="text-xs text-slate-500 mb-1">P&L</p>
                      <p className={`font-bold ${acc.pnl < 0 ? 'text-red-500' : 'text-green-500'}`}>
-                       {acc.pnl < 0 ? '-' : '+'}${Math.abs(acc.pnl).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {acc.pnl < 0 ? '-' : '+'}₹{Math.abs(acc.pnl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                      </p>
                    </div>
                    <div>
@@ -236,7 +237,7 @@ function AccountsPage() {
 
                  <p className="text-sm text-slate-600 mb-4 font-medium">
                    Don't have an account yet?<br />
-                   <span className="text-slate-500 font-normal">Trade up to $300,000 in simulated capital.</span>
+                   <span className="text-slate-500 font-normal">Trade up to ₹1.0 Crore in simulated capital.</span>
                  </p>
                  <button 
                   onClick={() => navigate('/dashboard/new-challenge')}

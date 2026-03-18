@@ -28,11 +28,17 @@ model User {
   brokerTokenExpiry  DateTime?
   passwordResetToken  String?   @unique
   passwordResetExpiry DateTime?
+  emailVerified       Boolean     @default(false)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   challenges      Challenge[]
   payments        Payment[]
   payouts         Payout[]
+  notifications   Notification[]
+  referrals       User[]      @relation("UserReferrals")
+  referrer        User?       @relation("UserReferrals", fields: [referredBy], references: [id])
+  emailVerifications EmailVerification[]
+  commissionsEarned  AffiliateCommission[] @relation("AffiliateEarned")
 }
 
 model Plan {
@@ -51,6 +57,7 @@ model Plan {
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
   challenges     Challenge[]
+  payments       Payment[]
 }
 
 model Challenge {
@@ -116,6 +123,8 @@ model Payment {
   stripeSessionId       String?       @unique
   razorpayOrderId       String?       @unique
   razorpayPaymentId     String?       @unique
+  planId                String?
+  plan                  Plan?         @relation(fields: [planId], references: [id])
   user                  User          @relation(fields: [userId], references: [id])
 }
 
@@ -203,4 +212,36 @@ model AuditLog {
   ipAddress       String?
   metadata        Json?
   createdAt       DateTime @default(now())
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // "BREACH", "PAYOUT", "KYC", "WELCOME"
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AffiliateCommission {
+  id            String   @id @default(uuid())
+  affiliateId   String   // The user who earned it
+  referredUserId String   // The user who made the purchase
+  challengeId   String   // The challenge purchase that triggered it
+  amount        BigInt   // Commission in paise
+  status        String   @default("PENDING") // PENDING, PAID, REJECTED
+  createdAt     DateTime @default(now())
+  affiliate     User     @relation("AffiliateEarned", fields: [affiliateId], references: [id])
 }

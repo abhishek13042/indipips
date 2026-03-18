@@ -20,9 +20,11 @@ const kycRoutes = require('./routes/kyc.routes');
 const adminRoutes = require('./routes/admin.routes');
 const payoutRoutes = require('./routes/payout.routes');
 const upstoxRoutes = require('./routes/upstox.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
+
 const { initBreachScanner } = require('./workers/breachScanner');
 const { initSnapshotWorker } = require('./workers/snapshotWorker');
-const { handleStripeWebhook } = require('./controllers/webhook.controller');
+const { handleStripeWebhook, handleRazorpayWebhook } = require('./controllers/webhook.controller');
 const upstoxFeed = require('./services/upstoxFeed.service');
 
 const app = express();
@@ -40,8 +42,9 @@ initSnapshotWorker();
 // Upstox broker account. It is NOT started at server startup because it
 // requires a valid per-user access token.
 
-// ── Stripe Webhook (MUST be before express.json) ────
+// ── Webhooks (MUST be before express.json) ──────────
 app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
+app.post('/api/v1/webhooks/razorpay', express.raw({ type: '*/*' }), handleRazorpayWebhook);
 
 // ── Security Middleware ───────────────────────────
 app.use(helmet({
@@ -100,6 +103,7 @@ app.use('/api/v1/kyc', kycRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/payouts', payoutRoutes);
 app.use('/api/v1/upstox', upstoxRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
 
 // ── Health Check ────────────────────────────────────
 app.get('/', (req, res) => {

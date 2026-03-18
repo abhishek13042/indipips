@@ -146,4 +146,49 @@ const closeTrade = async (req, res) => {
   }
 };
 
-module.exports = { openTrade, closeTrade };
+/**
+ * Get all active (open) trades for a challenge
+ * GET /api/v1/trades/active/:challengeId?
+ */
+const getActiveTrades = async (req, res) => {
+  try {
+    const { challengeId } = req.params;
+    const where = {
+      userId: req.userId,
+      status: 'OPEN',
+    };
+
+    if (challengeId) {
+      where.challengeId = challengeId;
+    }
+
+    const trades = await prisma.trade.findMany({
+      where,
+      include: {
+        challenge: true,
+      },
+      orderBy: {
+        entryTime: 'desc',
+      },
+    });
+
+    res.json({
+      success: true,
+      data: trades.map((t) => ({
+        id: t.id,
+        challengeId: t.challengeId,
+        symbol: t.symbol,
+        tradeType: t.tradeType,
+        quantity: t.quantity,
+        entryPrice: Number(t.entryPrice) / 100,
+        entryTime: t.entryTime,
+        status: t.status,
+      })),
+    });
+  } catch (error) {
+    console.error('Get active trades error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch active trades.' });
+  }
+};
+
+module.exports = { openTrade, closeTrade, getActiveTrades };

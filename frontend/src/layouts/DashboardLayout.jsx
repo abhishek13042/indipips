@@ -27,7 +27,7 @@ function DashboardLayout({ children }) {
 
   const handleLogout = async () => {
     await logout()
-    navigate('/login')
+    navigate('/')
   }
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode)
@@ -78,13 +78,13 @@ function DashboardLayout({ children }) {
         
         {/* Top Logo (Stylized 'iP') */}
         <div 
-          onClick={() => navigate('/')} 
+          onClick={() => navigate('/dashboard/analytics')} 
           className="cursor-pointer mb-6 group relative"
         >
-           {/* Abstract minimalist logo similar to the 'P' with dot */}
-           <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 12C12 9.79086 13.7909 8 16 8H28C30.2091 8 32 9.79086 32 12V16C32 18.2091 30.2091 20 28 20H16V32" stroke={isDarkMode ? 'white' : '#1e293b'} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="12" cy="12" r="4" fill={isDarkMode ? 'white' : '#1e293b'} />
+           {/* Abstract minimalist logo matching the new 'P' design */}
+           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`${isDarkMode ? 'text-white' : 'text-slate-900'} group-hover:opacity-80 transition-opacity`}>
+              <path d="M9 20V10C9 7.79086 10.7909 6 13 6H15.5C17.9853 6 20 8.01472 20 10.5C20 12.9853 17.9853 15 15.5 15H9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="5" cy="10" r="1.5" fill="currentColor" />
            </svg>
         </div>
 

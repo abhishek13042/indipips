@@ -11,9 +11,9 @@ function DashboardLayout({ children }) {
     await logout()
     navigate('/login')
   }
-  const navItems = [
     { label: '📊', name: 'Dashboard', path: '/dashboard' },
     { label: '🏆', name: 'Challenges', path: '/dashboard/challenges' },
+    { label: '🔗', name: 'Link Broker', path: '/dashboard/connect-broker' },
     { label: '🎫', name: 'Certificates', path: '/dashboard/certificates' },
     { label: '🎁', name: 'Rewards', path: '/dashboard/rewards' },
     { label: '🛡️', name: 'KYC', path: '/dashboard/kyc' },

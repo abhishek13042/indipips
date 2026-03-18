@@ -1,392 +1,421 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import DashboardLayout from '../components/DashboardLayout'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Check, ChevronRight, Info, ShieldCheck, CreditCard, Wallet, BadgePercent } from 'lucide-react'
+import DashboardLayout from '../layouts/DashboardLayout'
 import api from '../api'
+import { formatRupee } from '../utils/format'
+import { 
+  challengeTypes, 
+  models, 
+  accountSizes, 
+  tradingRules, 
+  platforms, 
+  paymentMethods 
+} from '../data/ChallengePlans'
 
 function BuyChallengePage() {
   const navigate = useNavigate()
-  const [plans, setPlans] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [purchasing, setPurchasing] = useState(false)
-  const [selectedType, setSelectedType] = useState('ONE_STEP')
-  const [selectedPlan, setSelectedPlan] = useState(null)
-  const [step, setStep] = useState(1) // 1=select, 2=review, 3=processing
+  
+  // Selection State
+  const [selectedType, setSelectedType] = useState('TWO_STEP')
+  const [selectedModel, setSelectedModel] = useState('IND_PIPS')
+  const [selectedSize, setSelectedSize] = useState(accountSizes[4]) // ₹1 Crore default
+  const [profitTarget, setProfitTarget] = useState('8')
+  const [swapFree, setSwapFree] = useState('NO')
+  const [selectedPlatform, setSelectedPlatform] = useState('MT5')
+  const [paymentMethod, setPaymentMethod] = useState('CARD')
+  
+  // UI State
+  const [coupon, setCoupon] = useState('')
+  const [termsAgreed, setTermsAgreed] = useState({
+    use: false,
+    correct: false,
+    tcs: false,
+    resident: false
+  })
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    const fetchPlans = async () => {
-      try {
-        const res = await api.get('/plans')
-        setPlans(res.data.data)
-      } catch (err) {
-        console.error('Failed to fetch plans:', err)
-        // Fallback for UI design verification if API fails
-        setPlans([
-          { id: '1', name: 'Seed', challengeType: 'ONE_STEP', accountSize: 250000, challengeFee: 999, profitTarget: 8, dailyLossLimit: 4, maxDrawdown: 8, minTradingDays: 5, maxTradingDays: 30, profitSplit: 80, isActive: true },
-          { id: '2', name: 'Starter', challengeType: 'ONE_STEP', accountSize: 500000, challengeFee: 1799, profitTarget: 8, dailyLossLimit: 4, maxDrawdown: 8, minTradingDays: 5, maxTradingDays: 30, profitSplit: 80, isActive: true },
-          { id: '3', name: 'Pro', challengeType: 'ONE_STEP', accountSize: 1000000, challengeFee: 3299, profitTarget: 8, dailyLossLimit: 4, maxDrawdown: 8, minTradingDays: 5, maxTradingDays: 30, profitSplit: 80, isActive: true },
-          { id: '4', name: 'Elite', challengeType: 'ONE_STEP', accountSize: 1500000, challengeFee: 4799, profitTarget: 8, dailyLossLimit: 4, maxDrawdown: 8, minTradingDays: 5, maxTradingDays: 30, profitSplit: 80, isActive: true },
-        ])
-      } finally {
-        setLoading(false)
-      }
+  // Calcs
+  const totalPrice = useMemo(() => {
+    let price = selectedSize.price;
+    // Apply swap-free logic
+    if (swapFree === 'YES') {
+      price = price * 1.1; // +10%
     }
-    fetchPlans()
-  }, [])
+    // Add platform extra
+    const plat = platforms.find(p => p.id === selectedPlatform);
+    if (plat) price += plat.extra;
 
-  const challengeTypes = [
-    { key: 'ZERO_STEP', label: 'Zero Step', desc: 'Instant Funded', icon: '⚡' },
-    { key: 'ONE_STEP', label: '1 Step', desc: 'One Evaluation', icon: '🎯' },
-    { key: 'TWO_STEP', label: '2 Step', desc: 'Two Evaluations', icon: '🏆' },
-  ]
-
-  const filteredPlans = plans.filter(p => p.challengeType === selectedType)
-
-  const formatAmount = (amount) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
-  }
+    return price;
+  }, [selectedSize, swapFree, selectedPlatform])
 
   const handlePurchase = async () => {
-    if (!selectedPlan) return
-    setPurchasing(true)
-    setStep(3)
-
+    setLoading(true)
     try {
-      const res = await api.post('/payments/create-checkout', {
-        planId: selectedPlan.id,
-      })
-
-      if (res.data.success && res.data.data.url) {
+      const payload = {
+        challengeType: selectedType,
+        model: selectedModel,
+        accountSize: selectedSize.numericValue,
+        profitTarget,
+        swapFree: swapFree === 'YES',
+        platform: selectedPlatform,
+        paymentMethod,
+        coupon
+      };
+      
+      const res = await api.post('/payments/create-checkout', payload)
+      if (res.data?.data?.url) {
         window.location.href = res.data.data.url
       }
     } catch (err) {
-      console.error('Purchase error:', err)
-      alert(err.response?.data?.message || 'Payment failed. Please try again.')
-      setPurchasing(false)
-      setStep(2)
+      console.error('Checkout error:', err)
+      alert('Checkout failed. Please try again or contact support.')
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-          <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(67, 56, 202, 0.1)', borderTopColor: '#2dd4bf', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-        </div>
-      </DashboardLayout>
-    )
-  }
+  const allTermsChecked = Object.values(termsAgreed).every(v => v === true)
 
   return (
     <DashboardLayout>
-      <div style={{ padding: '10px 0 40px 0' }}>
-        {/* Header Section */}
-        <div style={{ marginBottom: '40px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: 900, color: '#1e1b4b', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {step === 1 ? '🚀 Select Your Challenge' : step === 2 ? '📋 Review Order' : '⏳ Redirecting...'}
-          </h1>
-          <p style={{ fontSize: '16px', color: '#64748b', fontWeight: 500, margin: 0 }}>
-            {step === 1 ? 'Choose the path that fits your trading style and start your journey to being funded.' : step === 2 ? 'Confirm your selection and proceed to secure payment.' : 'Please wait while we prepare your secure checkout session.'}
-          </p>
+      <div className="max-w-[1400px] mx-auto pb-20">
+        
+        {/* Page Header */}
+        <div className="flex items-center gap-3 mb-8">
+           <div className="w-10 h-10 rounded-lg bg-white shadow-sm border border-slate-200 flex items-center justify-center">
+              <div className="w-5 h-5 bg-black text-white rounded flex flex-col items-center justify-center text-[10px] font-black leading-none">IP</div>
+           </div>
+           <span className="text-slate-400 font-medium">IndiPips®</span>
+           <span className="text-slate-200">|</span>
+           <h1 className="text-3xl font-bold text-slate-900">New Challenge</h1>
         </div>
 
-        {step === 1 && (
-          <>
-            {/* Step 1: Type Selection */}
-            <div style={{ 
-              display: 'flex', 
-              gap: '16px', 
-              marginBottom: '40px',
-              padding: '6px',
-              backgroundColor: '#f1f5f9',
-              borderRadius: '20px',
-              maxWidth: 'fit-content'
-            }}>
-              {challengeTypes.map(type => {
-                const isActive = selectedType === type.key;
-                return (
-                  <button
-                    key={type.key}
-                    onClick={() => { setSelectedType(type.key); setSelectedPlan(null) }}
-                    style={{
-                      padding: '12px 24px',
-                      borderRadius: '16px',
-                      border: 'none',
-                      backgroundColor: isActive ? 'white' : 'transparent',
-                      color: isActive ? '#1e1b4b' : '#64748b',
-                      cursor: 'pointer',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: isActive ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' : 'none',
-                      fontWeight: 700,
-                      fontSize: '14px'
-                    }}
-                  >
-                    <span style={{ fontSize: '18px' }}>{type.icon}</span>
-                    {type.label}
-                  </button>
-                )
-              })}
-            </div>
+        <div className="flex flex-col lg:flex-row gap-8 items-start">
+          
+          {/* LEFT: Selection Area (Step 2 & 3) */}
+          <div className="flex-1 space-y-8 w-full">
+            
+            {/* Challenge Type */}
+            <section>
+               <h3 className="text-sm font-bold text-slate-900 mb-1">Challenge Type</h3>
+               <p className="text-xs text-slate-500 mb-4">Choose the type of challenge you want to take</p>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {challengeTypes.map(type => (
+                    <button 
+                      key={type.id}
+                      onClick={() => setSelectedType(type.id)}
+                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
+                         selectedType === type.id 
+                         ? 'border-[#3b66f5] bg-blue-50/30' 
+                         : 'border-slate-100 bg-white hover:border-slate-200'
+                      }`}
+                    >
+                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedType === type.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
+                          {selectedType === type.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
+                       </div>
+                       <span className={`font-bold ${selectedType === type.id ? 'text-slate-900' : 'text-slate-600'}`}>
+                         {type.label}
+                       </span>
+                    </button>
+                  ))}
+               </div>
+            </section>
 
-            {/* Plans Grid */}
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-              gap: '24px' 
-            }}>
-              {filteredPlans.map(plan => {
-                const isSelected = selectedPlan?.id === plan.id;
-                return (
-                  <div
-                    key={plan.id}
-                    onClick={() => setSelectedPlan(plan)}
-                    style={{
-                      position: 'relative',
-                      padding: '32px',
-                      borderRadius: '24px',
-                      backgroundColor: isSelected ? 'white' : 'white',
-                      border: isSelected ? '2px solid #4338ca' : '2px solid transparent',
-                      boxShadow: isSelected ? '0 20px 25px -5px rgba(67, 56, 202, 0.1), 0 10px 10px -5px rgba(67, 56, 202, 0.04)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
-                      cursor: 'pointer',
-                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                      overflow: 'hidden',
-                      transform: isSelected ? 'translateY(-8px)' : 'none'
-                    }}
-                    onMouseOver={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.transform = 'translateY(-4px)';
-                        e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.05)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.transform = 'none';
-                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05)';
-                      }
-                    }}
-                  >
-                    {/* Badge */}
-                    <div style={{ 
-                      position: 'absolute', 
-                      top: '0', 
-                      right: '0', 
-                      padding: '8px 16px', 
-                      backgroundColor: isSelected ? '#4338ca' : '#f1f5f9',
-                      color: isSelected ? 'white' : '#64748b',
-                      fontSize: '10px',
-                      fontWeight: 900,
-                      letterSpacing: '1px',
-                      borderBottomLeftRadius: '16px'
-                    }}>
-                      {plan.name.toUpperCase()}
+            {/* Model */}
+            <section>
+               <h3 className="text-sm font-bold text-slate-900 mb-1">Model</h3>
+               <p className="text-xs text-slate-500 mb-4">Choose the trading model</p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {models.map(m => (
+                    <button 
+                      key={m.id}
+                      onClick={() => setSelectedModel(m.id)}
+                      className={`flex items-center gap-4 px-6 py-5 rounded-xl border-2 transition-all text-left group ${
+                         selectedModel === m.id 
+                         ? 'border-[#3b66f5] bg-blue-50/30' 
+                         : 'border-slate-100 bg-white hover:border-slate-200'
+                      }`}
+                    >
+                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedModel === m.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
+                          {selectedModel === m.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
+                       </div>
+                       <div>
+                          <p className={`font-bold ${selectedModel === m.id ? 'text-slate-900' : 'text-slate-600'}`}>{m.label}</p>
+                          <p className="text-[11px] text-slate-500">{m.desc}</p>
+                       </div>
+                    </button>
+                  ))}
+               </div>
+            </section>
+
+            {/* Customise Trading Rules */}
+            <section className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
+               <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-white rounded-lg shadow-sm">
+                    <BadgePercent className="text-blue-500" size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Customise Trading Rules</h3>
+                    <p className="text-[11px] text-slate-500">Adjust your challenge parameters to match your trading style</p>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Profit Target */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-700 mb-3">Profit Target</p>
+                    <p className="text-[10px] text-slate-500 mb-3">Choose options for profit target</p>
+                    <div className="flex gap-2 p-1 bg-white rounded-lg border border-slate-200">
+                       {tradingRules.profitTarget.map(rule => (
+                         <button 
+                           key={rule.id}
+                           onClick={() => setProfitTarget(rule.id)}
+                           className={`flex-1 py-2 px-3 rounded-md text-xs font-bold transition-all flex justify-between items-center ${
+                             profitTarget === rule.id ? 'bg-slate-100 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                           }`}
+                         >
+                            <span>{rule.label}</span>
+                            <span className={`text-[9px] ${rule.price === 0 ? 'text-slate-400 font-normal' : 'text-blue-600'}`}>
+                               {rule.price === 0 ? 'Default' : formatRupee(rule.price)}
+                            </span>
+                         </button>
+                       ))}
                     </div>
+                  </div>
 
-                    <div style={{ marginBottom: '24px' }}>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: '#94a3b8' }}>ACCOUNT SIZE</p>
-                      <h3 style={{ margin: 0, fontSize: '28px', fontWeight: 900, color: '#1e1b4b' }}>
-                        {formatAmount(Number(plan.accountSize))}
-                      </h3>
+                  {/* Swap Free */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-700 mb-3">Swap Free</p>
+                    <p className="text-[10px] text-slate-500 mb-3">Choose options for swap free</p>
+                    <div className="flex gap-2 p-1 bg-white rounded-lg border border-slate-200">
+                       {tradingRules.swapFree.map(rule => (
+                         <button 
+                           key={rule.id}
+                           onClick={() => setSwapFree(rule.id)}
+                           className={`flex-1 py-2 px-3 rounded-md text-xs font-bold transition-all flex justify-between items-center ${
+                             swapFree === rule.id ? 'bg-slate-100 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                           }`}
+                         >
+                            <span>{rule.label}</span>
+                            <span className={`text-[9px] ${rule.price === 0 ? 'text-slate-400 font-normal' : 'text-blue-600'}`}>
+                               {rule.price === 0 ? 'Default' : rule.labelExtra || formatRupee(rule.price)}
+                            </span>
+                         </button>
+                       ))}
                     </div>
+                  </div>
+               </div>
+            </section>
 
-                    <div style={{ marginBottom: '24px' }}>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: '#94a3b8' }}>CHALLENGE FEE</p>
-                      <h4 style={{ margin: 0, fontSize: '42px', fontWeight: 900, color: '#2dd4bf' }}>
-                        {formatAmount(Number(plan.challengeFee))}
-                      </h4>
-                    </div>
+            {/* Account Size */}
+            <section>
+               <h3 className="text-sm font-bold text-slate-900 mb-1">Account Size</h3>
+               <p className="text-xs text-slate-500 mb-4">Choose your preferred account size</p>
+               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {accountSizes.map(size => (
+                    <button 
+                      key={size.id}
+                      onClick={() => setSelectedSize(size)}
+                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
+                         selectedSize.id === size.id 
+                         ? 'border-[#3b66f5] bg-blue-50/30' 
+                         : 'border-slate-100 bg-white hover:border-slate-200'
+                      }`}
+                    >
+                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedSize.id === size.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
+                          {selectedSize.id === size.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
+                       </div>
+                       <span className={`font-bold whitespace-nowrap ${selectedSize.id === size.id ? 'text-slate-900' : 'text-slate-600'}`}>
+                         {size.label}
+                       </span>
+                    </button>
+                  ))}
+               </div>
+            </section>
 
-                    {/* Features List */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '24px' }}>
-                      {[
-                        { label: 'Profit Target', value: `${plan.profitTarget}%`, icon: '📈' },
-                        { label: 'Daily Loss', value: `${plan.dailyLossLimit}%`, icon: '📉' },
-                        { label: 'Max Drawdown', value: `${plan.maxDrawdown}%`, icon: '⚠️' },
-                        { label: 'Profit Split', value: `${plan.profitSplit}%`, icon: '💰' },
-                      ].map((feat, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {feat.icon} {feat.label}
+            {/* Trading Platform */}
+            <section>
+               <h3 className="text-sm font-bold text-slate-900 mb-1">Trading Platform</h3>
+               <p className="text-xs text-slate-500 mb-4">Choose your preferred trading platform</p>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {platforms.map(plat => (
+                    <button 
+                      key={plat.id}
+                      onClick={() => setSelectedPlatform(plat.id)}
+                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
+                         selectedPlatform === plat.id 
+                         ? 'border-[#3b66f5] bg-blue-50/30' 
+                         : 'border-slate-100 bg-white hover:border-slate-200'
+                      }`}
+                    >
+                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedPlatform === plat.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
+                          {selectedPlatform === plat.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
+                       </div>
+                       <div className="flex-1 flex justify-between items-center">
+                          <span className={`font-bold ${selectedPlatform === plat.id ? 'text-slate-900' : 'text-slate-600'}`}>
+                           {plat.label}
                           </span>
-                          <span style={{ fontSize: '14px', color: '#1e1b4b', fontWeight: 800 }}>{feat.value}</span>
-                        </div>
-                      ))}
-                    </div>
+                          {plat.extra > 0 && <span className="text-[9px] text-blue-600 font-bold">+{formatRupee(plat.extra)}</span>}
+                       </div>
+                    </button>
+                  ))}
+               </div>
+            </section>
 
-                    {isSelected && (
-                       <div style={{ 
-                         marginTop: '24px', 
-                         height: '4px', 
-                         width: '100%', 
-                         backgroundColor: '#2dd4bf', 
-                         borderRadius: '2px',
-                         animation: 'glow 2s infinite alternate' 
-                       }} />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+          </div>
 
-            {/* Sticky Action Footer */}
-            {selectedPlan && (
-              <div style={{ 
-                marginTop: '48px', 
-                textAlign: 'center',
-                animation: 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
-              }}>
-                <button
-                  onClick={() => setStep(2)}
-                  style={{
-                    backgroundColor: '#1e1b4b',
-                    color: 'white',
-                    border: 'none',
-                    padding: '18px 64px',
-                    borderRadius: '50px',
-                    fontWeight: 900,
-                    fontSize: '18px',
-                    cursor: 'pointer',
-                    boxShadow: '0 10px 15px -3px rgba(30, 27, 75, 0.3)',
-                    transition: 'all 0.3s',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '12px'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  Buy {selectedPlan.name} Account — {formatAmount(Number(selectedPlan.challengeFee))} 🚀
-                </button>
-              </div>
-            )}
-          </>
-        )}
+          {/* RIGHT: Order Summary (Step 4) */}
+          <div className="w-full lg:w-[400px] lg:sticky lg:top-10 space-y-6">
+             
+             {/* Billing Details Accordion Placeholder */}
+             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex justify-between items-center text-slate-900 mb-0">
+                  <h3 className="text-sm font-bold">Billing Details</h3>
+                  <ChevronRight size={18} className="text-slate-400 rotate-90" />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">Enter your billing information for the challenge purchase</p>
+             </div>
 
-        {step === 2 && selectedPlan && (
-          <div style={{ maxWidth: '800px', margin: '0 auto', animation: 'fadeIn 0.5s ease' }}>
-            <div style={{ 
-              backgroundColor: 'white', 
-              borderRadius: '32px', 
-              padding: '40px',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.08)',
-              border: '1px solid #f1f5f9'
-            }}>
-              <div style={{ display: 'flex', gap: '40px' }}>
-                {/* Left: Plan Summary */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ 
-                    padding: '24px', 
-                    borderRadius: '24px', 
-                    backgroundColor: '#1e1b4b', 
-                    color: 'white',
-                    marginBottom: '24px'
-                  }}>
-                    <p style={{ margin: 0, fontSize: '11px', fontWeight: 900, color: 'rgba(255,255,255,0.5)', letterSpacing: '1px' }}>SELECTED PLAN</p>
-                    <h3 style={{ margin: '4px 0 16px 0', fontSize: '24px', fontWeight: 900 }}>{selectedPlan.name} Challenge</h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+             {/* Coupon */}
+             <div className="space-y-2">
+                <h3 className="text-sm font-bold text-slate-900">Coupon Code</h3>
+                <p className="text-[11px] text-slate-500">Enter a coupon code to get a discount on your challenge</p>
+                <div className="flex gap-2">
+                   <input 
+                      type="text" 
+                      value={coupon}
+                      onChange={(e) => setCoupon(e.target.value)}
+                      placeholder="Enter coupon code"
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                   />
+                   <button className="px-5 py-2.5 bg-slate-50 text-slate-400 font-bold text-xs rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">Apply</button>
+                </div>
+             </div>
+
+             {/* Summary Card */}
+             <div className="bg-[#f8fafc] rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="bg-white border-b border-slate-100 p-5">
+                   <h3 className="text-lg font-bold text-slate-900">Order Summary</h3>
+                </div>
+                
+                <div className="p-5 space-y-4">
+                   <div className="flex justify-between items-start">
                       <div>
-                        <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>ACCOUNT SIZE</p>
-                        <p style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>{formatAmount(Number(selectedPlan.accountSize))}</p>
+                        <p className="text-sm font-bold text-slate-900">{selectedSize.displayValue} — {challengeTypes.find(t => t.id === selectedType)?.label} {models.find(m => m.id === selectedModel)?.label}</p>
+                        <p className="text-[11px] text-slate-500">Platform: {selectedPlatform}</p>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>PRICE</p>
-                        <p style={{ margin: 0, fontSize: '24px', fontWeight: 900, color: '#2dd4bf' }}>{formatAmount(Number(selectedPlan.challengeFee))}</p>
-                      </div>
-                    </div>
-                  </div>
+                      <span className="text-sm font-bold text-slate-900">{formatRupee(selectedSize.price)}</span>
+                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    {[
-                      { label: 'Profit Target', value: `${selectedPlan.profitTarget}%` },
-                      { label: 'Daily Loss', value: `${selectedPlan.dailyLossLimit}%` },
-                      { label: 'Max Drawdown', value: `${selectedPlan.maxDrawdown}%` },
-                      { label: 'Min Trading Days', value: selectedPlan.minTradingDays },
-                      { label: 'Max Days', value: 'Unlimited' },
-                      { label: 'Profit Split', value: `${selectedPlan.profitSplit}%` },
-                    ].map((item, i) => (
-                      <div key={i} style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                        <p style={{ margin: 0, fontSize: '10px', color: '#94a3b8', fontWeight: 800 }}>{item.label.toUpperCase()}</p>
-                        <p style={{ margin: 0, fontSize: '15px', color: '#1e1b4b', fontWeight: 800 }}>{item.value}</p>
-                      </div>
-                    ))}
-                  </div>
+                   {swapFree === 'YES' && (
+                     <div className="flex justify-between items-center text-[11px] text-blue-600 font-bold">
+                        <span>Swap Free Option (+10%)</span>
+                        <span>{formatRupee(selectedSize.price * 0.1)}</span>
+                     </div>
+                   )}
+
+                   <div className="h-px bg-slate-100 my-2"></div>
+
+                   <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Subtotal</span>
+                      <span className="font-bold text-slate-900">{formatRupee(totalPrice)}</span>
+                   </div>
+
+                   <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">GST (18%)</span>
+                      <span className="font-bold text-slate-900">{formatRupee(totalPrice * 0.18)}</span>
+                   </div>
+
+                   <div className="h-px bg-slate-200 my-2"></div>
+
+                   <div className="flex justify-between items-center">
+                      <span className="text-xl font-bold text-slate-900">Total Amount</span>
+                      <span className="text-2xl font-black text-[#3b66f5]">{formatRupee(totalPrice * 1.18)}</span>
+                   </div>
+
+                   {/* Terms Checkboxes */}
+                   <div className="space-y-3 pt-4">
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={termsAgreed.all} onChange={() => setTermsAgreed(prev => ({...prev, use: !prev.use, correct: !prev.correct, tcs: !prev.tcs, resident: !prev.resident}))} className="hidden" />
+                        <div onClick={() => setTermsAgreed(p => ({...p, use: !p.use}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.use ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                           {termsAgreed.use && <Check size={12} className="text-white" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[11px] leading-relaxed text-slate-600">I have read and agreed to the <a href="#" className="text-blue-600 hover:underline">Terms of Use</a>.</span>
+                      </label>
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div onClick={() => setTermsAgreed(p => ({...p, correct: !p.correct}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.correct ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                           {termsAgreed.correct && <Check size={12} className="text-white" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[11px] leading-relaxed text-slate-600">All information provided is correct and matches government-issued ID.</span>
+                      </label>
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div onClick={() => setTermsAgreed(p => ({...p, tcs: !p.tcs}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.tcs ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                           {termsAgreed.tcs && <Check size={12} className="text-white" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[11px] leading-relaxed text-slate-600">I have read and agree with the <a href="#" className="text-blue-600 hover:underline">Terms & Conditions</a>.</span>
+                      </label>
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div onClick={() => setTermsAgreed(p => ({...p, resident: !p.resident}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.resident ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                           {termsAgreed.resident && <Check size={12} className="text-white" strokeWidth={4} />}
+                        </div>
+                        <span className="text-[11px] leading-relaxed text-slate-600">I confirm that I am not a U.S. citizen or resident.</span>
+                      </label>
+                   </div>
                 </div>
+             </div>
 
-                {/* Right: Checkout Actions */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <div style={{ 
-                    backgroundColor: '#fffbeb', 
-                    padding: '20px', 
-                    borderRadius: '20px', 
-                    border: '1px solid #fef3c7',
-                    marginBottom: '32px'
-                  }}>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#92400e', fontWeight: 600, lineHeight: 1.6 }}>
-                      🔒 Secure Checkout: You will be redirected to our encrypted payment processor. Your credentials will be sent instantly upon success.
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <button
-                      onClick={handlePurchase}
-                      disabled={purchasing}
-                      style={{
-                        padding: '18px',
-                        borderRadius: '16px',
-                        border: 'none',
-                        backgroundColor: '#2dd4bf',
-                        color: '#1e1b4b',
-                        fontWeight: 900,
-                        fontSize: '18px',
-                        cursor: purchasing ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.3s'
-                      }}
-                    >
-                      {purchasing ? 'Encrypting...' : 'Secure Checkout →'}
-                    </button>
-                    <button
-                      onClick={() => setStep(1)}
-                      style={{
-                        padding: '14px',
-                        borderRadius: '16px',
-                        border: '2px solid #f1f5f9',
-                        backgroundColor: 'transparent',
-                        color: '#64748b',
-                        fontWeight: 700,
-                        fontSize: '14px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      ← Back to Selection
-                    </button>
-                  </div>
+             {/* Payment Methods */}
+             <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-900">Select payment method</h3>
+                <div className="space-y-2">
+                   {paymentMethods.map(method => (
+                     <button 
+                        key={method.id}
+                        onClick={() => setPaymentMethod(method.id)}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                          paymentMethod === method.id ? 'border-blue-600 bg-blue-50/20' : 'border-slate-100 bg-white hover:border-slate-200'
+                        }`}
+                     >
+                        <div className="flex items-center gap-3">
+                           <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${paymentMethod === method.id ? 'border-blue-600' : 'border-slate-300'}`}>
+                              {paymentMethod === method.id && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                           </div>
+                           <span className="text-xs font-bold text-slate-900">{method.label}</span>
+                        </div>
+                        <div className="flex gap-2">
+                           {method.icons.map(icon => (
+                             <div key={icon} className="h-5 w-8 bg-slate-100 rounded flex items-center justify-center text-[8px] font-black text-slate-400">
+                                {icon}
+                             </div>
+                           ))}
+                        </div>
+                     </button>
+                   ))}
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
+             </div>
 
-        {/* Step 3: Global Processing Overlay */}
-        {step === 3 && (
-          <div style={{ textAlign: 'center', padding: '100px 0' }}>
-            <div className="pulse" style={{ width: '80px', height: '80px', backgroundColor: 'rgba(45, 212, 191, 0.1)', borderRadius: '50%', margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center' }}>
-               <div style={{ width: '40px', height: '40px', border: '3px solid #2dd4bf', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-            </div>
-            <h2 style={{ color: '#1e1b4b', fontWeight: 900, margin: '0 0 8px 0' }}>Preparing Your Journey</h2>
-            <p style={{ color: '#64748b', fontWeight: 500 }}>Connecting to secure payment node...</p>
+             <button 
+                onClick={handlePurchase}
+                disabled={!allTermsChecked || loading}
+                className={`w-full py-4 rounded-xl font-black text-sm tracking-wider transition-all shadow-lg ${
+                  allTermsChecked && !loading
+                  ? 'bg-[#3b66f5] text-white hover:bg-blue-600 hover:-translate-y-0.5' 
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                }`}
+             >
+                {loading ? 'PROCESSING...' : 'CONTINUE TO PAYMENT'}
+             </button>
+
           </div>
-        )}
+
+        </div>
+
       </div>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes glow { from { opacity: 0.5; box-shadow: 0 0 5px #2dd4bf; } to { opacity: 1; box-shadow: 0 0 15px #2dd4bf; } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      `}} />
     </DashboardLayout>
   )
 }
 
 export default BuyChallengePage
+

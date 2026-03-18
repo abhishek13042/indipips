@@ -12,8 +12,10 @@ import AccountsPage from './pages/AccountsPage'
 import PayoutsPage from './pages/PayoutsPage'
 import LeaderboardPage from './pages/LeaderboardPage'
 import CompetitionsPage from './pages/CompetitionsPage'
+import CalendarPage from './pages/CalendarPage'
 import ProfilePage from './pages/ProfilePage'
 import KYCPage from './pages/KYCPage'
+import BrokerConnectPage from './pages/BrokerConnectPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import ProtectedRoute from './ProtectedRoute'
 
@@ -59,6 +61,11 @@ function App() {
           <DashboardPage />
         </ProtectedRoute>
       } />
+      <Route path="/dashboard/analytics" element={
+        <ProtectedRoute>
+          <DashboardPage />
+        </ProtectedRoute>
+      } />
       <Route path="/dashboard/new-challenge" element={
         <ProtectedRoute>
           <BuyChallengePage />
@@ -89,6 +96,11 @@ function App() {
           <CompetitionsPage />
         </ProtectedRoute>
       } />
+      <Route path="/dashboard/calendar" element={
+        <ProtectedRoute>
+          <CalendarPage />
+        </ProtectedRoute>
+      } />
       <Route path="/dashboard/profile" element={
         <ProtectedRoute>
           <ProfilePage />
@@ -97,6 +109,11 @@ function App() {
       <Route path="/dashboard/kyc" element={
         <ProtectedRoute>
           <KYCPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/connect-broker" element={
+        <ProtectedRoute>
+          <BrokerConnectPage />
         </ProtectedRoute>
       } />
       <Route path="/admin/matrix" element={

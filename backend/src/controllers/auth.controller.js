@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { z } = require('zod');
 const prisma = require('../utils/prisma');
+const emailService = require('../services/email.service');
 
 // ── Generate unique referral code ──────────────────
 function generateReferralCode() {
@@ -16,14 +17,18 @@ function generateReferralCode() {
 
 // ── Generate JWT tokens ────────────────────────────
 function generateTokens(userId, role) {
+  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    console.error('❌ CRITICAL: JWT secrets not set in environment variables!');
+  }
+
   const accessToken = jwt.sign(
     { userId, role },
-    process.env.JWT_SECRET || 'indipips_super_secret_jwt_key_2026',
+    process.env.JWT_SECRET,
     { expiresIn: '15m' }
   );
   const refreshToken = jwt.sign(
     { userId, role },
-    process.env.JWT_REFRESH_SECRET || 'indipips_refresh_secret_key_2026',
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: '30d' }
   );
   return { accessToken, refreshToken };
@@ -112,27 +117,29 @@ const register = async (req, res) => {
       }
     });
 
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Set refresh token in cookie
-    res.cookie('refreshToken', refreshToken, cookieOptions);
+    // Save OTP to DB
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        token: otp,
+        expiresAt
+      }
+    });
+
+    // Send Verification Email (async, don't await-block the response)
+    emailService.sendVerificationEmail(email, otp);
 
     res.status(201).json({
       success: true,
-      message: 'Welcome to Indipips! Account created successfully.',
+      message: 'Account created! Please check your email for the verification code.',
       data: {
-        user: {
-          id: user.id,
-          fullName: user.fullName,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          referralCode: user.referralCode,
-          kycStatus: user.kycStatus,
-          walletBalance: user.walletBalance.toString()
-        },
-        accessToken
+        userId: user.id,
+        email: user.email,
+        mustVerify: true
       }
     });
 
@@ -177,6 +184,16 @@ const login = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Your account has been suspended. Please contact support.'
+      });
+    }
+
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email address before logging in.',
+        mustVerify: true,
+        userId: user.id
       });
     }
 
@@ -282,8 +299,8 @@ const refreshToken = async (req, res) => {
 
     // Check user exists
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-    if (!user || !user.isActive) {
-      return res.status(401).json({ success: false, message: 'Session expired.' });
+    if (!user || !user.isActive || !user.emailVerified) {
+      return res.status(401).json({ success: false, message: 'Session invalid or unverified.' });
     }
 
     // Generate new tokens
@@ -331,13 +348,92 @@ const forgotPassword = async (req, res) => {
 
     console.log(`⚠️ Password reset token for ${email}: ${resetToken}`);
 
+    // Send real email
+    await emailService.sendPasswordResetEmail(email, resetToken);
+
     res.json({
       success: true,
-      message: 'Password reset link sent to your email.',
-      ...(process.env.NODE_ENV !== 'production' && { devToken: resetToken })
+      message: 'Password reset link sent to your email.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
+    res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+// ── VERIFY EMAIL ──────────────────────────────────
+const verifyEmail = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+
+    if (!userId || !otp) {
+      return res.status(400).json({ success: false, message: 'User ID and OTP are required.' });
+    }
+
+    const verification = await prisma.emailVerification.findFirst({
+      where: {
+        userId,
+        token: otp,
+        verified: false,
+        expiresAt: { gt: new Date() }
+      }
+    });
+
+    if (!verification) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification code.' });
+    }
+
+    // Update user and verification status
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { emailVerified: true }
+      }),
+      prisma.emailVerification.update({
+        where: { id: verification.id },
+        data: { verified: true }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully! You can now log in.'
+    });
+
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
+};
+
+// ── RESEND OTP ─────────────────────────────────────
+const resendOTP = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'User ID is required.' });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    if (user.emailVerified) return res.status(400).json({ success: false, message: 'Account already verified.' });
+
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        token: otp,
+        expiresAt
+      }
+    });
+
+    await emailService.sendVerificationEmail(user.email, otp);
+
+    res.json({ success: true, message: 'New verification code sent to your email.' });
+
+  } catch (error) {
+    console.error('Resend OTP error:', error);
     res.status(500).json({ success: false, message: 'Something went wrong.' });
   }
 };
@@ -399,4 +495,15 @@ const googleCallback = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getProfile, refreshToken, logout, googleCallback, forgotPassword, resetPassword };
+module.exports = {
+  register,
+  login,
+  getProfile,
+  refreshToken,
+  logout,
+  googleCallback,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
+  resendOTP
+};

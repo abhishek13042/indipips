@@ -1,126 +1,152 @@
 const Stripe = require('stripe');
+const crypto = require('crypto');
 const prisma = require('../utils/prisma');
 
-// Lazy Stripe init — prevents crash when key is a placeholder
+// Lazy Stripe init
 const getStripe = () => {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key || key.includes('YOUR_')) return null;
   return new Stripe(key);
 };
 
+// ── Stripe Webhook ────────────────────────────────
 const handleStripeWebhook = async (req, res) => {
   const stripe = getStripe();
-  if (!stripe) {
-    return res.status(503).json({ success: false, message: 'Stripe not configured.' });
-  }
+  if (!stripe) return res.status(503).json({ success: false, message: 'Stripe not configured.' });
 
   const sig = req.headers['stripe-signature'];
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      req.body, 
-      sig, 
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('Stripe Webhook Error:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle the event
   try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        const session = event.data.object;
-        await activateChallenge(session);
-        break;
-      
-      case 'checkout.session.expired':
-      case 'payment_intent.payment_failed':
-        const failedSession = event.data.object;
-        await handlePaymentFailure(failedSession);
-        break;
-
-      default:
-        console.log(`Unhandled event type ${event.type}`);
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      await activateChallenge({
+        stripeSessionId: session.id,
+        stripePaymentIntentId: session.payment_intent,
+        userId: session.metadata.userId,
+        planId: session.metadata.planId
+      });
+    } else if (event.type === 'checkout.session.expired' || event.type === 'payment_intent.payment_failed') {
+      const session = event.data.object;
+      await prisma.payment.updateMany({
+        where: { stripeSessionId: session.id },
+        data: { status: 'FAILED' }
+      });
     }
   } catch (error) {
-    console.error(`Error processing webhook event ${event.type}:`, error);
+    console.error('Error processing Stripe event:', error);
   }
 
   res.json({ received: true });
 };
 
-async function activateChallenge(session) {
-  const { userId, planId } = session.metadata;
-  const stripeSessionId = session.id;
+// ── Razorpay Webhook ──────────────────────────────
+const handleRazorpayWebhook = async (req, res) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const signature = req.headers['x-razorpay-signature'];
+
+  // For Razorpay, we use the raw body (req.body is a Buffer here because of express.raw in server.js)
+  const expectedSignature = crypto.createHmac('sha256', secret)
+    .update(req.body) 
+    .digest('hex');
+
+  if (signature !== expectedSignature) {
+    console.warn('⚠️ Razorpay signature verification failed.');
+    return res.status(400).send('Invalid signature');
+  }
+
+  // Parse body after verification
+  const data = JSON.parse(req.body.toString());
+  const { event, payload } = data;
+
+  if (event === 'order.paid') {
+    const razorpayOrderId = payload.order.entity.id;
+    const razorpayPaymentId = payload.payment.entity.id;
+
+    try {
+      const payment = await prisma.payment.findUnique({
+        where: { razorpayOrderId }
+      });
+
+      if (payment && payment.status !== 'SUCCESS') {
+        await activateChallenge({
+          razorpayOrderId,
+          razorpayPaymentId,
+          userId: payment.userId,
+          planId: payment.planId
+        });
+      }
+    } catch (error) {
+      console.error('Error processing Razorpay event:', error);
+    }
+  }
+
+  res.json({ status: 'ok' });
+};
+
+/**
+ * Unified Challenge Activation Logic
+ */
+async function activateChallenge({ stripeSessionId, stripePaymentIntentId, razorpayOrderId, razorpayPaymentId, userId, planId }) {
+  console.log(`🛠 Activating challenge for user ${userId}, plan ${planId}...`);
 
   // 1. Update Payment record
+  const paymentUpdate = {};
+  if (stripeSessionId) {
+    paymentUpdate.status = 'SUCCESS';
+    paymentUpdate.stripePaymentIntentId = stripePaymentIntentId;
+  } else if (razorpayOrderId) {
+    paymentUpdate.status = 'SUCCESS';
+    paymentUpdate.razorpayPaymentId = razorpayPaymentId;
+  }
+
   const payment = await prisma.payment.update({
-    where: { stripeSessionId },
-    data: { 
-      status: 'SUCCESS',
-      stripePaymentIntentId: session.payment_intent 
-    }
+    where: stripeSessionId ? { stripeSessionId } : { razorpayOrderId },
+    data: paymentUpdate
   });
 
-  // 2. Fetch Plan details
-  const plan = await prisma.plan.findUnique({
-    where: { id: planId }
-  });
-
+  // 2. Fetch Plan
+  const plan = await prisma.plan.findUnique({ where: { id: planId } });
   if (!plan) throw new Error(`Plan ${planId} not found`);
 
-  // 3. Create the Challenge (Skip if already exists for this payment)
-  const existingChallenge = await prisma.challenge.findFirst({
-    where: { 
+  // 3. Create the Challenge
+  const startDate = new Date();
+  const expiryDate = new Date();
+  expiryDate.setDate(startDate.getDate() + plan.maxTradingDays);
+
+  const randomSuffix = Math.floor(10000000 + Math.random() * 90000000);
+  const accountNodeId = `IP-${randomSuffix}`;
+
+  const challenge = await prisma.challenge.create({
+    data: {
       userId,
       planId,
-      createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } // Within last 5 mins
+      accountNodeId,
+      accountSize: plan.accountSize,
+      currentBalance: plan.accountSize,
+      peakBalance: plan.accountSize,
+      startDate,
+      expiryDate,
+      status: 'ACTIVE',
+      phase: 1
     }
   });
 
-  if (!existingChallenge) {
-    const startDate = new Date();
-    const expiryDate = new Date();
-    expiryDate.setDate(startDate.getDate() + plan.maxTradingDays);
-
-    // Generate unique accountNodeId (e.g., IP-10293847)
-    const randomSuffix = Math.floor(10000000 + Math.random() * 90000000);
-    const accountNodeId = `IP-${randomSuffix}`;
-
-    const challenge = await prisma.challenge.create({
-      data: {
-        userId,
-        planId,
-        accountNodeId,
-        accountSize: plan.accountSize,
-        currentBalance: plan.accountSize,
-        peakBalance: plan.accountSize,
-        startDate,
-        expiryDate,
-        status: 'ACTIVE',
-        phase: 1
-      }
-    });
-
-    // Update payment with challenge ID
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { challengeId: challenge.id }
-    });
-
-    console.log(`✅ Success: Challenge activated for user ${userId} (Plan: ${plan.name})`);
-  }
-}
-
-async function handlePaymentFailure(session) {
-  await prisma.payment.updateMany({
-    where: { stripeSessionId: session.id },
-    data: { status: 'FAILED' }
+  // 4. Update payment with challenge reference
+  await prisma.payment.update({
+    where: { id: payment.id },
+    data: { challengeId: challenge.id }
   });
-  console.log(`❌ Payment failed or expired for session ${session.id}`);
+
+  console.log(`✅ Success: Challenge ${challenge.id} (Account: ${accountNodeId}) activated!`);
+  return challenge;
 }
 
-module.exports = { handleStripeWebhook };
+module.exports = { handleStripeWebhook, handleRazorpayWebhook };
