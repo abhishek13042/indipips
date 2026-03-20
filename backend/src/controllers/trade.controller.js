@@ -92,19 +92,18 @@ const closeTrade = async (req, res) => {
 
     // Use Broker Service to close order
     const updatedTrade = await brokerService.closeOrder(tradeId, parseFloat(exitPrice));
-    const pnlNum = Number(updatedTrade.pnl) / 100;
-    const pnlBigInt = updatedTrade.pnl;
+    const pnlBigInt = BigInt(updatedTrade.pnl);
 
     // Update Challenge Balance
-    const newBalance = Number(trade.challenge.currentBalance) + Math.round(pnlNum * 100);
+    const newBalance = BigInt(trade.challenge.currentBalance) + pnlBigInt;
     const updatedChallenge = await prisma.challenge.update({
       where: { id: trade.challengeId },
       data: {
-        currentBalance: BigInt(newBalance),
+        currentBalance: newBalance,
         totalPnl: { increment: pnlBigInt },
-        peakBalance: newBalance > Number(trade.challenge.peakBalance) ? BigInt(newBalance) : trade.challenge.peakBalance,
-        winCount: pnlNum > 0 ? { increment: 1 } : undefined,
-        lossCount: pnlNum <= 0 ? { increment: 1 } : undefined,
+        peakBalance: newBalance > BigInt(trade.challenge.peakBalance) ? newBalance : trade.challenge.peakBalance,
+        winCount: pnlBigInt > 0n ? { increment: 1 } : undefined,
+        lossCount: pnlBigInt <= 0n ? { increment: 1 } : undefined,
       },
     });
 

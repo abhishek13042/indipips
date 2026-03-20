@@ -32,7 +32,6 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.20.0",
-    "prisma": "^7.5.0",
     "protobufjs": "^8.0.0",
     "razorpay": "^2.9.6",
     "socket.io": "^4.8.3",
@@ -44,6 +43,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "prisma": "^7.5.0"
   }
 }

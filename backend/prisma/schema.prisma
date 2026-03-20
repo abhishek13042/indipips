@@ -4,41 +4,42 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id              String      @id @default(uuid())
-  fullName        String
-  email           String      @unique
-  phone           String?     @unique
-  passwordHash    String?
-  googleId        String?     @unique
-  role            Role        @default(TRADER)
-  kycStatus       KycStatus   @default(PENDING)
-  aadhaarVerified Boolean     @default(false)
-  panNumber       String?
-  bankAccount     String?
-  bankIfsc        String?
-  referralCode    String      @unique
-  referredBy      String?
-  walletBalance   BigInt      @default(0)
-  isActive        Boolean     @default(true)
-  brokerAccessToken  String?
-  brokerRefreshToken String?
-  brokerTokenExpiry  DateTime?
-  passwordResetToken  String?   @unique
+  id                  String                @id @default(uuid())
+  fullName            String
+  email               String                @unique
+  phone               String?               @unique
+  passwordHash        String?
+  role                Role                  @default(TRADER)
+  kycStatus           KycStatus             @default(PENDING)
+  aadhaarVerified     Boolean               @default(false)
+  panNumber           String?
+  bankAccount         String?
+  bankIfsc            String?
+  referralCode        String                @unique
+  referredBy          String?
+  walletBalance       BigInt                @default(0)
+  isActive            Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  googleId            String?               @unique
+  brokerAccessToken   String?
+  brokerRefreshToken  String?
+  brokerTokenExpiry   DateTime?
   passwordResetExpiry DateTime?
-  emailVerified       Boolean     @default(false)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  challenges      Challenge[]
-  payments        Payment[]
-  payouts         Payout[]
-  notifications   Notification[]
-  referrals       User[]      @relation("UserReferrals")
-  referrer        User?       @relation("UserReferrals", fields: [referredBy], references: [id])
-  emailVerifications EmailVerification[]
-  commissionsEarned  AffiliateCommission[] @relation("AffiliateEarned")
+  passwordResetToken  String?               @unique
+  emailVerified       Boolean               @default(false)
+  commissionsEarned   AffiliateCommission[] @relation("AffiliateEarned")
+  challenges          Challenge[]
+  emailVerifications  EmailVerification[]
+  notifications       Notification[]
+  payments            Payment[]
+  payouts             Payout[]
+  referrer            User?                 @relation("UserReferrals", fields: [referredBy], references: [id])
+  referrals           User[]                @relation("UserReferrals")
 }
 
 model Plan {
@@ -61,52 +62,52 @@ model Plan {
 }
 
 model Challenge {
-  id              String          @id @default(uuid())
-  accountNodeId   String?         @unique
-  userId          String
-  planId          String
-  accountSize     BigInt
-  currentBalance  BigInt
-  peakBalance     BigInt
+  id                   String           @id @default(uuid())
+  userId               String
+  planId               String
+  accountSize          BigInt
+  currentBalance       BigInt
+  peakBalance          BigInt
+  totalPnl             BigInt           @default(0)
+  dailyPnl             BigInt           @default(0)
+  daysTraded           Int              @default(0)
+  phase                Int              @default(1)
+  status               ChallengeStatus  @default(ACTIVE)
+  failReason           String?
+  startDate            DateTime
+  expiryDate           DateTime
+  passedAt             DateTime?
+  brokerConnected      Boolean          @default(false)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  accountNodeId        String?          @unique
+  lossCount            Int              @default(0)
+  totalTrades          Int              @default(0)
+  winCount             Int              @default(0)
   dailyStartingBalance BigInt?
-  totalPnl        BigInt          @default(0)
-  dailyPnl        BigInt          @default(0)
-  daysTraded      Int             @default(0)
-  phase           Int             @default(1)
-  status          ChallengeStatus @default(ACTIVE)
-  failReason      String?
-  startDate       DateTime
-  expiryDate      DateTime
-  passedAt        DateTime?
-  totalTrades     Int             @default(0)
-  winCount        Int             @default(0)
-  lossCount       Int             @default(0)
-  brokerConnected Boolean         @default(false)
-  isLive          Boolean         @default(false)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  plan            Plan            @relation(fields: [planId], references: [id])
-  user            User            @relation(fields: [userId], references: [id])
-  payouts         Payout[]
-  trades          Trade[]
-  equitySnapshots EquitySnapshot[]
+  isLive               Boolean          @default(false)
+  plan                 Plan             @relation(fields: [planId], references: [id])
+  user                 User             @relation(fields: [userId], references: [id])
+  equitySnapshots      EquitySnapshot[]
+  payouts              Payout[]
+  trades               Trade[]
 }
 
 model Trade {
   id            String      @id @default(uuid())
   challengeId   String
   userId        String
-  symbol        String
   tradeType     TradeType
   quantity      Int
   entryPrice    BigInt
   exitPrice     BigInt?
   pnl           BigInt      @default(0)
-  status        TradeStatus @default(OPEN)
   entryTime     DateTime    @default(now())
   exitTime      DateTime?
   brokerTradeId String?     @unique
   createdAt     DateTime    @default(now())
+  status        TradeStatus @default(OPEN)
+  symbol        String
   challenge     Challenge   @relation(fields: [challengeId], references: [id])
 }
 
@@ -142,6 +143,59 @@ model Payout {
   processedAt     DateTime?
   challenge       Challenge    @relation(fields: [challengeId], references: [id])
   user            User         @relation(fields: [userId], references: [id])
+}
+
+model EquitySnapshot {
+  id          String    @id @default(uuid())
+  challengeId String
+  balance     BigInt
+  equity      BigInt
+  timestamp   DateTime  @default(now())
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  userId          String
+  action          String
+  amount          BigInt?
+  previousBalance BigInt?
+  newBalance      BigInt?
+  ipAddress       String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AffiliateCommission {
+  id             String   @id @default(uuid())
+  affiliateId    String
+  referredUserId String
+  challengeId    String
+  amount         BigInt
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+  affiliate      User     @relation("AffiliateEarned", fields: [affiliateId], references: [id])
 }
 
 enum Role {
@@ -191,57 +245,4 @@ enum PayoutStatus {
 enum TradeStatus {
   OPEN
   CLOSED
-}
-
-model EquitySnapshot {
-  id          String    @id @default(uuid())
-  challengeId String
-  balance     BigInt
-  equity      BigInt
-  timestamp   DateTime  @default(now())
-  challenge   Challenge @relation(fields: [challengeId], references: [id])
-}
-
-model AuditLog {
-  id              String   @id @default(uuid())
-  userId          String
-  action          String
-  amount          BigInt?
-  previousBalance BigInt?
-  newBalance      BigInt?
-  ipAddress       String?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-}
-
-model EmailVerification {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  verified  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-}
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String   // "BREACH", "PAYOUT", "KYC", "WELCOME"
-  title     String
-  body      String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-}
-
-model AffiliateCommission {
-  id            String   @id @default(uuid())
-  affiliateId   String   // The user who earned it
-  referredUserId String   // The user who made the purchase
-  challengeId   String   // The challenge purchase that triggered it
-  amount        BigInt   // Commission in paise
-  status        String   @default("PENDING") // PENDING, PAID, REJECTED
-  createdAt     DateTime @default(now())
-  affiliate     User     @relation("AffiliateEarned", fields: [affiliateId], references: [id])
 }

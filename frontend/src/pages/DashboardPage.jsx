@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Share2, ChevronUp, ArrowLeft, Zap, TrendingUp, TrendingDown } from 'lucide-react'
 import DashboardLayout from '../layouts/DashboardLayout'
-import { useAuth } from '../context/AuthContext'
+import useAuthStore from '../stores/authStore'
+import useChallengeStore from '../stores/challengeStore'
 import { useSocket } from '../context/SocketContext'
 import QuickTradeTerminal from '../components/QuickTradeTerminal'
 import ActivePositionsTable from '../components/ActivePositionsTable'
@@ -12,64 +13,36 @@ import { formatRupee } from '../utils/format'
 function DashboardPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user } = useAuthStore()
   const { socket } = useSocket()
-  const [challenge, setChallenge] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { challenges, fetchChallenges, activeChallenge, setActiveChallenge, isLoading } = useChallengeStore()
   const [livePrices, setLivePrices] = useState({})
 
-  // Using mock data for UI replication since API might not match screenshot exactly
-  const mockData = {
-    totalAllocation: 1000000.00,
-    totalTrades: 647,
-    level: 'Bronze',
-    totalReward: 0.00,
-    highestReward: 0.00,
-    count: 0,
-    winRate: 21.9,
-    won: 142,
-    lost: 505,
-    avgHolding: '18m',
-    sessions: [
-      { name: 'New York', percent: 27.4, val: 27.4 },
-      { name: 'London', percent: 17.4, val: 17.4 },
-      { name: 'Asia', percent: 22.0, val: 22.0 }
-    ],
-    instruments: [
-      { name: 'NIFTY 50', w: 42, l: 165, key: 'NSE_INDEX|Nifty 50' }, 
-      { name: 'BANK NIFTY', w: 35, l: 132, key: 'NSE_INDEX|Nifty Bank' },
-      { name: 'RELIANCE', w: 30, l: 89, key: 'NSE_EQ|INE002A01018' }
-    ]
-  }
+  useEffect(() => {
+    if (challenges.length === 0) {
+      fetchChallenges()
+    }
+  }, [fetchChallenges, challenges.length])
 
   useEffect(() => {
-    const fetchRealData = async () => {
-       try {
-         const endpoint = id ? `/challenges/${id}` : '/analytics/global'
-         const res = await api.get(endpoint)
-         if (res.data?.data) {
-           setChallenge(res.data.data)
-         }
-       } catch (err) {
-         console.warn("Using mock data due to error", err)
-         setChallenge({ id, ...mockData })
-       } finally {
-         setLoading(false)
-       }
+    if (id && challenges.length > 0) {
+      const found = challenges.find(c => c.id === id)
+      if (found) setActiveChallenge(found)
+    } else if (!id && challenges.length > 0) {
+      setActiveChallenge(challenges[0])
     }
-    fetchRealData()
-  }, [id])
+  }, [id, challenges, setActiveChallenge])
 
   // Socket listener for live price updates
   useEffect(() => {
-    if (socket) {
-      // Subscribe to price updates for relevant instruments
-      const instruments = challenge?.instruments || mockData.instruments;
-      instruments.forEach(inst => {
-        if (inst.key) {
-           socket.emit('subscribe_price', inst.key);
-        }
-      });
+    if (socket && activeChallenge) {
+      // Subscribe to price updates
+      const instruments = [
+          { key: 'NSE_INDEX|Nifty 50' },
+          { key: 'NSE_INDEX|Nifty Bank' },
+          { key: 'NSE_EQ|INE002A01018' }
+      ];
+      instruments.forEach(inst => socket.emit('subscribe_price', inst.key));
 
       socket.on('price_update', (data) => {
         setLivePrices(prev => ({
@@ -82,21 +55,19 @@ function DashboardPage() {
         }))
       })
 
-      return () => {
-        socket.off('price_update');
-      }
+      return () => socket.off('price_update');
     }
-  }, [socket, challenge])
+  }, [socket, activeChallenge])
 
-  const displayData = challenge || mockData;
+  const displayData = activeChallenge;
   const isDarkMode = false; 
 
   const cardClass = `rounded-xl border ${isDarkMode ? 'bg-[#151b28] border-slate-700' : 'bg-white border-slate-200 shadow-sm'} p-4 md:p-6`
   const textPrimary = isDarkMode ? 'text-white' : 'text-slate-900'
   const textSecondary = isDarkMode ? 'text-slate-400' : 'text-slate-500'
 
-  if (loading) {
-     return <DashboardLayout><div className="flex justify-center items-center h-full">Loading...</div></DashboardLayout>
+  if (isLoading || !displayData) {
+     return <DashboardLayout><div className="flex justify-center items-center h-full">Loading account data...</div></DashboardLayout>
   }
 
   return (
@@ -159,8 +130,12 @@ function DashboardPage() {
                     <span>Live Market Feed</span>
                     <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div> Live</span>
                  </div>
-                 <div className="divide-y divide-slate-800">
-                    {displayData.instruments.map((inst, i) => {
+                  <div className="divide-y divide-slate-800">
+                    {(displayData.instruments || [
+                        { name: 'NIFTY 50', key: 'NSE_INDEX|Nifty 50' },
+                        { name: 'BANK NIFTY', key: 'NSE_INDEX|Nifty Bank' },
+                        { name: 'RELIANCE', key: 'NSE_EQ|INE002A01018' }
+                    ]).map((inst, i) => {
                        const live = livePrices[inst.key];
                        const direction = live?.price > live?.prevPrice ? 'up' : live?.price < live?.prevPrice ? 'down' : 'stable';
                        return (
@@ -179,7 +154,7 @@ function DashboardPage() {
                           </div>
                        )
                     })}
-                 </div>
+                  </div>
               </div>
               
               {/* Bronze Level Card */}

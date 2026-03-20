@@ -1,60 +1,33 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Moon, Sun, Mail, CheckCircle2, RefreshCw } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
-import api from '../api'
+import useAuthStore from '../stores/authStore'
 
 function LoginPage() {
   const navigate = useNavigate()
-  const { login, user } = useAuth()
+  const { login, user, error: authError, clearError } = useAuthStore()
   const [form, setForm] = useState({ email: '', password: '', rememberMe: false })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [isDarkMode, setIsDarkMode] = useState(true)
 
-  // Verification State
-  const [showVerification, setShowVerification] = useState(false)
-  const [otp, setOtp] = useState(['', '', '', '', '', ''])
-  const [userId, setUserId] = useState(null)
-  const [verifying, setVerifying] = useState(false)
-  const [resending, setResending] = useState(false)
-  const [success, setSuccess] = useState('')
+  // ... (other states)
 
   useEffect(() => {
     if (user) {
-      navigate('/dashboard')
+      navigate('/dashboard/accounts')
     }
   }, [user, navigate])
-
-  const handleChange = (e) => {
-    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    setForm({ ...form, [e.target.name]: value })
-  }
-
-  const handleOtpChange = (element, index) => {
-    if (isNaN(element.value)) return false;
-    setOtp([...otp.map((d, idx) => (idx === index ? element.value : d))]);
-    if (element.nextSibling && element.value !== "") {
-      element.nextSibling.focus();
-    }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    setSuccess('')
     try {
-      const res = await api.post('/auth/login', form)
-      login(res.data.data.user, res.data.data.accessToken)
-      navigate('/dashboard')
+      await login(form.email, form.password)
+      navigate('/dashboard/accounts')
     } catch (err) {
-      if (err.response?.data?.mustVerify) {
-        setUserId(err.response.data.userId)
-        setShowVerification(true)
-      } else {
-        setError(err.response?.data?.message || 'Login failed. Try again.')
-      }
+      setError(err.message)
     } finally {
       setLoading(false)
     }

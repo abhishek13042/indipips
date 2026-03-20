@@ -27,21 +27,22 @@ const initBreachScanner = () => {
       });
 
       for (const challenge of activeChallenges) {
-        let currentEquity = Number(challenge.currentBalance);
+        let currentEquity = BigInt(challenge.currentBalance);
 
         // Calculate unrealized P&L from open trades
-        // Note: For now, we assume mock pricing or the last recorded entry price
-        // In reality, this would fetch live market prices.
         if (challenge.trades.length > 0) {
-          const unrealizedPnl = challenge.trades.reduce((sum, trade) => {
+          let unrealizedPnl = 0n;
+          for (const trade of challenge.trades) {
             const livePrice = priceFeed.getPrice(trade.symbol);
             if (livePrice) {
-              const tradePnl = (Number(livePrice) * 100 - Number(trade.entryPrice)) * trade.quantity;
-              return sum + (trade.tradeType === 'BUY' ? tradePnl : -tradePnl);
+              const livePricePaise = BigInt(Math.round(Number(livePrice) * 100));
+              const tradePnl = (livePricePaise - BigInt(trade.entryPrice)) * BigInt(trade.quantity);
+              unrealizedPnl += (trade.tradeType === 'BUY' ? tradePnl : -tradePnl);
+            } else {
+              unrealizedPnl += BigInt(trade.pnl || 0);
             }
-            return sum + Number(trade.pnl);
-          }, 0);
-          currentEquity += unrealizedPnl / 100;
+          }
+          currentEquity += unrealizedPnl;
         }
 
         // Check for breaches

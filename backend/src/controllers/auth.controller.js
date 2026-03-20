@@ -5,34 +5,7 @@ const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const emailService = require('../services/email.service');
 
-// ── Generate unique referral code ──────────────────
-function generateReferralCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = 'INDI';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-// ── Generate JWT tokens ────────────────────────────
-function generateTokens(userId, role) {
-  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-    console.error('❌ CRITICAL: JWT secrets not set in environment variables!');
-  }
-
-  const accessToken = jwt.sign(
-    { userId, role },
-    process.env.JWT_SECRET,
-    { expiresIn: '15m' }
-  );
-  const refreshToken = jwt.sign(
-    { userId, role },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: '30d' }
-  );
-  return { accessToken, refreshToken };
-}
+const authService = require('../services/auth.service');
 
 // ── Cookie Options ─────────────────────────────────
 const cookieOptions = {
@@ -61,77 +34,7 @@ const register = async (req, res) => {
       });
     }
 
-    const { fullName, email, phone, password, referralCode: reqReferralCode } = parsedData.data;
-
-    // Check if email already exists
-    const existingEmail = await prisma.user.findUnique({
-      where: { email }
-    });
-    if (existingEmail) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email already registered. Please login instead.'
-      });
-    }
-
-    // Check if phone already exists
-    const existingPhone = await prisma.user.findUnique({
-      where: { phone }
-    });
-    if (existingPhone) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone number already registered.'
-      });
-    }
-
-    // Hash the password
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Generate unique referral code
-    let referralCode = generateReferralCode();
-    let codeExists = await prisma.user.findUnique({ where: { referralCode } });
-    while (codeExists) {
-      referralCode = generateReferralCode();
-      codeExists = await prisma.user.findUnique({ where: { referralCode } });
-    }
-
-    // Check if referred by someone
-    let referredBy = null;
-    if (reqReferralCode) {
-      const referrer = await prisma.user.findUnique({
-        where: { referralCode: reqReferralCode }
-      });
-      if (referrer) referredBy = referrer.id;
-    }
-
-    // Create the user
-    const user = await prisma.user.create({
-      data: {
-        fullName,
-        email,
-        phone,
-        passwordHash,
-        referralCode,
-        referredBy
-      }
-    });
-
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    // Save OTP to DB
-    await prisma.emailVerification.create({
-      data: {
-        userId: user.id,
-        token: otp,
-        expiresAt
-      }
-    });
-
-    // Send Verification Email (async, don't await-block the response)
-    emailService.sendVerificationEmail(email, otp);
+    const user = await authService.registerUser(parsedData.data);
 
     res.status(201).json({
       success: true,
@@ -145,9 +48,9 @@ const register = async (req, res) => {
 
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({
+    res.status(error.message.includes('registered') ? 400 : 500).json({
       success: false,
-      message: 'Something went wrong. Please try again.'
+      message: error.message || 'Something went wrong. Please try again.'
     });
   }
 };
@@ -169,48 +72,10 @@ const login = async (req, res) => {
     }
 
     const { email, password } = parsedData.data;
-
-    // Find user
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
-    }
-
-    // Check if account is active
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account has been suspended. Please contact support.'
-      });
-    }
-
-    // Check if email is verified
-    if (!user.emailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your email address before logging in.',
-        mustVerify: true,
-        userId: user.id
-      });
-    }
-
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
-    }
-
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+    const { user, tokens } = await authService.loginUser(email, password);
 
     // Set refresh token in cookie
-    res.cookie('refreshToken', refreshToken, cookieOptions);
+    res.cookie('refreshToken', tokens.refreshToken, cookieOptions);
 
     res.json({
       success: true,
@@ -226,15 +91,17 @@ const login = async (req, res) => {
           kycStatus: user.kycStatus,
           walletBalance: user.walletBalance.toString()
         },
-        accessToken
+        accessToken: tokens.accessToken
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({
+    const status = error.message.includes('verified') ? 403 : (error.message.includes('Invalid') ? 401 : 500);
+    res.status(status).json({
       success: false,
-      message: 'Something went wrong. Please try again.'
+      message: error.message,
+      mustVerify: error.message.includes('verified')
     });
   }
 };

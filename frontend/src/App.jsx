@@ -19,11 +19,11 @@ import BrokerConnectPage from './pages/BrokerConnectPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import ProtectedRoute from './ProtectedRoute'
 
-import { useAuth } from './context/AuthContext'
+import useAuthStore from './stores/authStore'
 
 // Admin-only route guard
 const AdminRoute = ({ children }) => {
-  const { user } = useAuth()
+  const { user } = useAuthStore()
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
     return <Navigate to="/dashboard" replace />
@@ -32,9 +32,9 @@ const AdminRoute = ({ children }) => {
 }
 
 function App() {
-  const { loading } = useAuth()
+  const { isLoading } = useAuthStore()
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: '#6b7280', fontWeight: 600 }}>Loading session...</p>

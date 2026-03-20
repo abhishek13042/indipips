@@ -156,12 +156,154 @@ const createCheckoutSession = async (req, res) => {
   }
 };
 
+// ── CREATE PAYMENT SESSION (Unified) ──────────────────────────
+const createPaymentSession = async (req, res) => {
+  try {
+    const { planId, gateway, challengeType, accountSize, model, platform, swapFree, coupon } = req.body;
+    const userId = req.userId;
+
+    if (!planId || !gateway) {
+      return res.status(400).json({ success: false, message: 'Plan ID and gateway are required.' });
+    }
+
+    const plan = await prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan || !plan.isActive) {
+      return res.status(404).json({ success: false, message: 'Plan not found or inactive.' });
+    }
+
+    // Calculate amount (same logic as createCheckoutSession)
+    let amountInSmallestUnit = Number(plan.challengeFee);
+    if (swapFree === true) {
+      amountInSmallestUnit = Math.round(amountInSmallestUnit * 1.1); // +10%
+    }
+    if (platform === 'cTrader') {
+      amountInSmallestUnit += 1600; // ₹1600 extra for cTrader
+    }
+    const gstAmount = Math.round(amountInSmallestUnit * 0.18);
+    const totalAmountWithGst = amountInSmallestUnit + gstAmount;
+
+    const payment = await paymentService.createPayment(userId, {
+      planId,
+      amount: totalAmountWithGst * 100, // Store in smallest unit (Paise)
+      gstAmount: gstAmount * 100,
+      currency: 'inr',
+      gateway,
+      metadata: {
+        challengeType: challengeType || plan.challengeType,
+        platform: platform || 'MT5',
+        swapFree: swapFree ? 'true' : 'false'
+      }
+    });
+
+    if (gateway === 'RAZORPAY') {
+      const order = await razorpayService.createOrder(totalAmountWithGst, payment.id); // Razorpay expects amount in rupees
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { razorpayOrderId: order.id }
+      });
+
+      // Audit Log
+      await auditLogger.logAction({
+        userId: req.userId,
+        action: 'PAYMENT_INITIATED',
+        amount: totalAmountWithGst * 100,
+        metadata: { gateway: 'razorpay', planId, orderId: order.id }
+      });
+
+      return res.json({
+        success: true,
+        gateway: 'RAZORPAY',
+        data: {
+          orderId: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          paymentId: payment.id // Return our internal payment ID
+        }
+      });
+    } else if (gateway === 'STRIPE') {
+      const stripe = getStripe();
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          message: 'Stripe payment gateway is not configured. Please add STRIPE_SECRET_KEY to .env file.'
+        });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        mode: 'payment',
+        customer_email: req.user?.email || 'customer@example.com',
+        metadata: {
+          paymentId: payment.id, // Link Stripe session to our internal payment record
+          userId: req.userId,
+          planId: planId,
+          planName: plan.name,
+          challengeType: challengeType || plan.challengeType,
+          platform: platform || 'MT5',
+          swapFree: swapFree ? 'true' : 'false'
+        },
+        line_items: [
+          {
+            price_data: {
+              currency: 'inr',
+              product_data: {
+                name: `${plan.name} Challenge`,
+                description: `Verification: ${challengeType || plan.challengeType} | Size: ${Number(plan.accountSize) / 100000} Lakhs | Platform: ${platform || 'MT5'}`,
+              },
+              unit_amount: totalAmountWithGst * 100, // Stripe expects Paise
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.APP_URL}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL}/dashboard?payment=cancelled`,
+      });
+
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { stripeSessionId: session.id },
+      });
+
+      // Audit Log
+      await auditLogger.logAction({
+        userId: req.userId,
+        action: 'PAYMENT_INITIATED',
+        amount: totalAmountWithGst * 100,
+        metadata: { gateway: 'stripe', planId, currency: 'inr' }
+      });
+
+      return res.json({
+        success: true,
+        gateway: 'STRIPE',
+        data: {
+          sessionId: session.id,
+          url: session.url,
+          paymentId: payment.id
+        },
+      });
+    } else {
+      return res.status(400).json({ success: false, message: 'Unsupported payment gateway.' });
+    }
+
+  } catch (error) {
+    console.error('Create payment session error:', error);
+    res.status(500).json({ success: false, message: 'Failed to initiate payment.' });
+  }
+};
+
 // ── Create Razorpay Order ────────────────────────
+// This function is now deprecated in favor of createPaymentSession
 const createRazorpayOrder = async (req, res) => {
   try {
     const { planId } = req.body;
     if (!planId) return res.status(400).json({ success: false, message: 'Plan ID is required.' });
 
+    const plan = await prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan || !plan.isActive) {
+      return res.status(404).json({ success: false, message: 'Plan not found or inactive.' });
+    }
+
+    // Calculate amount (simplified for this deprecated function)
     const amountInPaise = Number(plan.challengeFee);
     const gstAmount = Math.round(amountInPaise * 0.18);
     const totalWithGst = amountInPaise + gstAmount;

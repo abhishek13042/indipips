@@ -1,7 +1,7 @@
 const express = require('express');
 const passport = require('passport');
 const router = express.Router();
-const { register, login, getProfile, refreshToken, logout, forgotPassword, resetPassword } = require('../controllers/auth.controller');
+const { register, login, getProfile, refreshToken, logout, forgotPassword, resetPassword, verifyEmail, resendOTP } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth.middleware');
 
 // ── Public Routes ──────────────────────────────────

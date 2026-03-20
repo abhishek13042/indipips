@@ -1,10 +1,11 @@
 import { Navigate } from 'react-router-dom'
+import useAuthStore from './stores/authStore'
 import { jwtDecode } from 'jwt-decode'
 
 function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('accessToken')
+  const { token, logout, isAuthenticated } = useAuthStore()
   
-  if (!token) {
+  if (!token || !isAuthenticated) {
     return <Navigate to="/login" replace />
   }
 
@@ -12,13 +13,11 @@ function ProtectedRoute({ children }) {
     const decoded = jwtDecode(token)
     const now = Date.now() / 1000
     if (decoded.exp < now) {
-      localStorage.removeItem('accessToken')
-      localStorage.removeItem('user')
+      logout()
       return <Navigate to="/login" replace />
     }
   } catch (e) {
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('user')
+    logout()
     return <Navigate to="/login" replace />
   }
   

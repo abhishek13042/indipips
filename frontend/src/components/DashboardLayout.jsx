@@ -11,6 +11,8 @@ function DashboardLayout({ children }) {
     await logout()
     navigate('/login')
   }
+
+  const navItems = [
     { label: '📊', name: 'Dashboard', path: '/dashboard' },
     { label: '🏆', name: 'Challenges', path: '/dashboard/challenges' },
     { label: '🔗', name: 'Link Broker', path: '/dashboard/connect-broker' },

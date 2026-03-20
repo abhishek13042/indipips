@@ -1,61 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Moon, Sun, CheckCircle2, Mail, ArrowRight, RefreshCw } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import useAuthStore from '../stores/authStore'
 import api from '../api'
 
 function RegisterPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, register: authRegister } = useAuthStore()
   
-  const [form, setForm] = useState({ 
-    firstName: '', 
-    lastName: '', 
-    title: '', 
-    dob: '', 
-    country: '', 
-    email: '', 
-    phoneCode: '', 
-    phone: '', 
-    password: '', 
-    confirmPassword: '', 
-    referralCode: '',
-    agreeAge: false,
-    agreeName: false,
-    agreeMarketing: false
-  })
-  
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [isDarkMode, setIsDarkMode] = useState(true)
-  
-  // Verification State
-  const [showVerification, setShowVerification] = useState(false)
-  const [otp, setOtp] = useState(['', '', '', '', '', ''])
-  const [userId, setUserId] = useState(null)
-  const [verifying, setVerifying] = useState(false)
-  const [resending, setResending] = useState(false)
-  const [success, setSuccess] = useState('')
+  // ... (states)
 
   useEffect(() => {
-    if (user) navigate('/dashboard')
+    if (user) navigate('/dashboard/accounts')
   }, [user, navigate])
-
-  const handleChange = (e) => {
-    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    setForm({ ...form, [e.target.name]: value })
-  }
-
-  const handleOtpChange = (element, index) => {
-    if (isNaN(element.value)) return false;
-
-    setOtp([...otp.map((d, idx) => (idx === index ? element.value : d))]);
-
-    // Focus next input
-    if (element.nextSibling && element.value !== "") {
-      element.nextSibling.focus();
-    }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -84,19 +41,16 @@ function RegisterPage() {
     }
 
     try {
-      const res = await api.post('/auth/register', payload)
-      if (res.data.data.mustVerify) {
-        setUserId(res.data.data.userId)
+      const res = await authRegister(payload)
+      if (res.data?.mustVerify) {
+        setUserId(res.data.userId)
         setShowVerification(true)
         window.scrollTo(0, 0)
       } else {
-        // Fallback if verification is disabled on backend
-        localStorage.setItem('accessToken', res.data.data.accessToken)
-        localStorage.setItem('user', JSON.stringify(res.data.data.user))
-        window.location.href = '/dashboard'
+        navigate('/dashboard/accounts')
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Try again.')
+      setError(err.message || 'Registration failed.')
     } finally {
       setLoading(false)
     }

@@ -1,0 +1,7683 @@
+--- START OF Indipips_API_DOC_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+API DOCUMENTATION
+
+Complete REST API Reference — All Endpoints, Request/Response Examples & Error Codes
+Document Code: INDI-API-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY — NOT FOR DISTRIBUTION
+Field
+Details
+Document Code
+INDI-API-001
+Document Type
+API Reference Documentation
+Version
+1.0 — Initial Release
+Base URL (Production)
+https://api.indipips.com/api/v1
+Base URL (Development)
+http://localhost:5000/api/v1
+Protocol
+HTTPS (HTTP in development only)
+Data Format
+JSON — application/json
+Authentication
+Bearer JWT Token
+Status
+Final — Approved
+Date
+March 2026
+1. API Overview
+1.1 Introduction
+The Indipips REST API enables all communication between the React frontend, mobile clients, and third-party integrations. Every feature of the Indipips platform — trader registration, challenge management, real-time risk monitoring, payments, payouts, KYC verification, and admin operations — is powered by this API. This document provides the complete reference for every endpoint including request formats, response schemas, authentication requirements, and error handling.
+
+1.2 Base URLs
+Environment
+Base URL
+Notes
+Production
+https://api.indipips.com/api/v1
+TLS enforced — HTTP redirects to HTTPS
+Staging
+https://staging-api.indipips.com/api/v1
+Same as production but with test data
+Development
+http://localhost:5000/api/v1
+No TLS required in local dev
+
+1.3 Authentication
+All protected endpoints require a valid JWT access token in the Authorization header. Tokens are obtained via POST /auth/login or POST /auth/register. Tokens expire after 7 days — use the refresh endpoint to get a new token without re-login.
+
+  REQUEST HEADER — AUTHENTICATION
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+1.4 Standard Response Envelope
+Every API response — success or error — follows the same envelope structure. This allows the frontend to handle responses uniformly.
+
+  SUCCESS RESPONSE
+// SUCCESS RESPONSE
+{
+  "success": true,
+  "message": "Challenge fetched successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "ACTIVE",
+    "currentBalance": 1000000.00
+  },
+  "pagination": {
+    "total": 150,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 8
+  }
+}
+
+  ERROR RESPONSE
+// ERROR RESPONSE
+{
+  "success": false,
+  "message": "Email already registered. Please login instead.",
+  "errors": [
+    { "field": "email", "message": "Email already in use" }
+  ]
+}
+
+1.5 HTTP Status Codes Used
+Code
+Meaning
+When Used
+200 OK
+Request succeeded
+GET, PUT, DELETE success
+201 Created
+Resource created
+POST success — registration, challenge purchase, payout request
+400 Bad Request
+Validation failed
+Missing/invalid request body fields
+401 Unauthorized
+Authentication required
+Missing, invalid, or expired JWT token
+403 Forbidden
+Access denied
+Valid token but wrong role or wrong resource owner
+404 Not Found
+Resource not found
+Challenge/payout/user ID does not exist
+409 Conflict
+Resource already exists
+Duplicate email, phone, or brokerTradeId
+410 Gone
+Resource expired
+OTP expired, email verification token expired
+422 Unprocessable
+Business rule violation
+KYC not complete, minimum payout not met, etc.
+423 Locked
+Account locked
+Too many login attempts — lockout active
+429 Too Many Requests
+Rate limit exceeded
+More than allowed requests in time window
+500 Internal Server Error
+Server error
+Unexpected backend error — logged to Sentry
+503 Service Unavailable
+External service down
+Razorpay, Upstox, or UIDAI service unavailable
+
+1.6 Rate Limits
+Endpoint Group
+Limit
+Window
+Headers Returned
+On Exceed
+Authentication routes (login, register, OTP)
+5 requests
+Per minute per IP
+X-RateLimit-Limit: 5, X-RateLimit-Remaining: N
+429 — Retry-After header with seconds
+General API routes
+100 requests
+Per minute per IP
+X-RateLimit-Limit: 100
+429 — Retry-After header with seconds
+Admin routes
+200 requests
+Per minute per IP
+X-RateLimit-Limit: 200
+429 — Retry-After header with seconds
+Webhook routes
+1000 requests
+Per minute per IP (Razorpay/broker IP)
+None
+429 — Alert sent to Sentry
+Manual broker sync
+1 request
+Per 5 minutes per trader
+None
+429 — message with next allowed time
+2. Authentication Endpoints
+All authentication endpoints are public — no token required unless noted. The base path for all endpoints in this section is /auth.
+
+2.1 Register New Trader
+POST
+/auth/register
+Auth: Public — No token required
+
+Creates a new trader account. Sends OTP to mobile and verification email. Returns JWT tokens immediately — trader can explore the platform before completing verification, but cannot purchase a challenge until phone is verified.
+
+Request Body
+Field
+Type
+Required
+Validation
+Description
+fullName
+String
+Yes
+2-100 characters
+Trader's legal full name — locked after Aadhaar KYC
+email
+String
+Yes
+Valid email format, unique
+Primary login and communication email
+phone
+String
+Yes
+10 digits, Indian mobile
+For OTP — must be active Indian number
+password
+String
+Yes
+Min 8 chars, 1 uppercase, 1 number, 1 special char
+Hashed with bcrypt cost 12
+referralCode
+String
+No
+Valid existing code only
+Code from referring trader — 10% commission on fee
+
+  REQUEST BODY EXAMPLE
+{
+  "fullName": "Arjun Sharma",
+  "email": "arjun@gmail.com",
+  "phone": "9876543210",
+  "password": "MyPass@123",
+  "referralCode": "INDI7X3K9M"
+}
+
+Success Response — 201 Created
+  RESPONSE — 201 CREATED
+{
+  "success": true,
+  "message": "Welcome to Indipips, Arjun! Please verify your mobile number.",
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "fullName": "Arjun Sharma",
+      "email": "arjun@gmail.com",
+      "phone": "9876543210",
+      "role": "TRADER",
+      "kycStatus": "PENDING",
+      "referralCode": "INDI4A2B8C",
+      "emailVerified": false,
+      "phoneVerified": false,
+      "createdAt": "2026-03-14T09:15:00.000Z"
+    },
+    "tokens": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "expiresIn": "7d"
+    }
+  }
+}
+
+Error Responses
+400
+Validation failed — missing or invalid fields
+409
+Email already registered — or Phone already registered
+  409 CONFLICT EXAMPLE
+{ "success": false, "message": "Email already registered. Please login instead.",
+  "errors": [{ "field": "email", "message": "Email already in use" }] }
+
+
+2.2 Verify Phone Number
+POST
+/auth/verify-phone
+Auth: Public
+
+Verifies the trader's mobile number using the 6-digit OTP sent during registration or resent via the resend-otp endpoint. OTP is valid for 10 minutes and single-use. After verification, the trader can purchase challenges.
+
+Request Body
+Field
+Type
+Required
+Notes
+phone
+String
+Yes
+The mobile number to verify
+otp
+String
+Yes
+6-digit OTP received via SMS
+
+  REQUEST BODY
+{ "phone": "9876543210", "otp": "483921" }
+
+Success Response — 200 OK
+  RESPONSE — 200 OK
+{ "success": true, "message": "Phone verified successfully.", "data": { "phoneVerified": true } }
+
+Error Responses
+400
+Invalid OTP — wrong 6-digit code entered
+410
+OTP expired — 10-minute TTL elapsed — use resend-otp
+422
+Phone already verified — duplicate verification attempt
+
+2.3 Login
+POST
+/auth/login
+Auth: Public
+
+Authenticates a trader with email and password. Returns a new pair of access and refresh tokens. Checks account active status, failed login attempts, and lockout state before issuing tokens.
+
+Request Body
+Field
+Type
+Required
+Notes
+email
+String
+Yes
+Registered email address
+password
+String
+Yes
+Account password — compared against bcrypt hash
+
+  REQUEST BODY
+{ "email": "arjun@gmail.com", "password": "MyPass@123" }
+
+Success Response — 200 OK
+  RESPONSE — 200 OK
+{
+  "success": true,
+  "message": "Welcome back, Arjun Sharma!",
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "fullName": "Arjun Sharma",
+      "email": "arjun@gmail.com",
+      "role": "TRADER",
+      "kycStatus": "VERIFIED",
+      "phoneVerified": true,
+      "emailVerified": true
+    },
+    "tokens": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "expiresIn": "7d"
+    }
+  }
+}
+
+Error Responses
+401
+Invalid email or password
+403
+Account suspended — contact support
+423
+Account locked — 5 failed attempts — locked for 15 minutes
+  423 LOCKED EXAMPLE
+{ "success": false, "message": "Account locked due to 5 failed attempts.",
+  "data": { "lockUntil": "2026-03-14T09:30:00.000Z", "minutesRemaining": 14 } }
+
+
+2.4 Refresh Access Token
+POST
+/auth/refresh
+Auth: Public — requires valid refreshToken
+
+Issues a new access token and refresh token using a valid, non-expired, non-blacklisted refresh token. Implements token rotation — the submitted refresh token is blacklisted and replaced. Call this when the access token expires or within 24 hours before expiry to maintain session.
+
+  REQUEST BODY
+{ "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+
+Success Response — 200 OK
+  RESPONSE — 200 OK
+{ "success": true, "message": "Token refreshed successfully.",
+  "data": { "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "expiresIn": "7d" } }
+
+401
+Invalid, expired, or already-used (blacklisted) refresh token
+
+2.5 Logout
+POST
+/auth/logout
+Auth: Trader
+
+Blacklists the current access token in Redis and clears the refresh token. Ensures the token cannot be reused even before natural expiry.
+
+  REQUEST
+// No request body — token from Authorization header is blacklisted
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Logged out successfully." }
+
+
+2.6 Forgot Password
+POST
+/auth/forgot-password
+Auth: Public
+
+  REQUEST BODY
+{ "email": "arjun@gmail.com" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Password reset OTP sent to your registered mobile." }
+
+Note: Always returns 200 OK even if email not found — prevents email enumeration attacks.
+
+2.7 Reset Password
+POST
+/auth/reset-password
+Auth: Public
+
+  REQUEST BODY
+{ "email": "arjun@gmail.com", "otp": "192847", "newPassword": "NewPass@456" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Password reset successfully. Please login." }
+
+400
+OTP invalid — wrong code entered
+410
+OTP expired — 10-minute TTL elapsed
+3. User Profile Endpoints
+All endpoints require Trader or Admin authentication. Base path: /users
+
+3.1 Get Profile
+GET
+/users/profile
+Auth: Trader
+
+  RESPONSE — 200 OK
+{
+  "success": true,
+  "message": "Profile fetched successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "fullName": "Arjun Sharma",
+    "email": "arjun@gmail.com",
+    "phone": "9876543210",
+    "role": "TRADER",
+    "kycStatus": "VERIFIED",
+    "aadhaarVerified": true,
+    "panNumber": "ABCDE1234F",
+    "bankAccount": "****4321",
+    "bankIfsc": "SBIN0001234",
+    "bankName": "State Bank of India",
+    "referralCode": "INDI4A2B8C",
+    "walletBalance": 299.00,
+    "emailVerified": true,
+    "phoneVerified": true,
+    "createdAt": "2026-03-01T09:15:00.000Z"
+  }
+}
+
+
+3.2 Update Profile
+PUT
+/users/profile
+Auth: Trader
+
+Field
+Type
+Required
+Notes
+fullName
+String
+No
+Updateable only if aadhaarVerified = false
+phone
+String
+No
+Requires new OTP verification — sends OTP before update
+  REQUEST BODY
+{ "fullName": "Arjun Kumar Sharma" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Profile updated successfully.", "data": { ...updatedUser } }
+
+422
+Full name cannot be changed after Aadhaar verification
+
+3.3 Change Password
+PUT
+/users/change-password
+Auth: Trader
+
+  REQUEST BODY
+{ "currentPassword": "MyPass@123", "newPassword": "NewPass@456" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Password changed successfully. Please login again." }
+
+400
+Current password is incorrect
+422
+New password cannot be same as current password
+4. KYC Verification Endpoints
+KYC is mandatory before any payout. The full KYC flow requires: (1) Aadhaar OTP verification, (2) PAN card submission, (3) Bank account verification. Base path: /kyc
+
+4.1 Get KYC Status
+GET
+/kyc/status
+Auth: Trader
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "kycStatus": "VERIFIED",
+    "aadhaarVerified": true,
+    "panSubmitted": true,
+    "bankVerified": true,
+    "completedAt": "2026-03-05T14:30:00.000Z"
+  } }
+
+
+4.2 Initiate Aadhaar OTP
+POST
+/kyc/aadhaar/initiate
+Auth: Trader
+
+Sends OTP to the mobile number linked with the trader's Aadhaar via UIDAI (through Digio). The Aadhaar number is never stored — only sent to UIDAI and discarded after receiving the requestId.
+
+Field
+Type
+Required
+Notes
+aadhaarNumber
+String
+Yes
+12-digit Aadhaar number — never stored after this call
+consent
+Boolean
+Yes
+Must be true — confirms trader consent to UIDAI data sharing
+  REQUEST BODY
+{ "aadhaarNumber": "123456789012", "consent": true }
+
+  RESPONSE — 200 OK
+{ "success": true,
+  "message": "OTP sent to Aadhaar-linked mobile number ending in ****3210.",
+  "data": { "requestId": "digio_req_abc123xyz", "expiresIn": 600 } }
+
+400
+Invalid Aadhaar format — must be 12 digits
+422
+Aadhaar already verified on this account
+503
+UIDAI service unavailable — try again
+
+4.3 Verify Aadhaar OTP
+POST
+/kyc/aadhaar/verify
+Auth: Trader
+
+  REQUEST BODY
+{ "requestId": "digio_req_abc123xyz", "otp": "847291" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Aadhaar verified successfully.",
+  "data": { "aadhaarVerified": true, "name": "ARJUN SHARMA",
+            "message": "Your full name has been auto-updated from Aadhaar records." } }
+
+400
+Invalid OTP
+410
+OTP expired — re-initiate Aadhaar OTP
+
+4.4 Submit PAN
+POST
+/kyc/pan
+Auth: Trader
+
+  REQUEST BODY
+{ "panNumber": "ABCDE1234F" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "PAN saved successfully.", "data": { "panSubmitted": true } }
+
+
+4.5 Verify Bank Account
+POST
+/kyc/bank
+Auth: Trader
+
+Verifies bank account by IFSC lookup. Penny drop verification (small deposit then confirm amount) is Phase 2 — Phase 1 validates IFSC format and resolves bank name.
+
+  REQUEST BODY
+{ "accountNumber": "31234567890", "ifsc": "SBIN0001234" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Bank account verified successfully.",
+  "data": { "bankVerified": true, "bankName": "State Bank of India",
+            "accountLast4": "7890", "kycStatus": "VERIFIED" } }
+
+400
+Invalid IFSC code format
+422
+Bank verification failed — IFSC not found in RBI database
+5. Challenge Plans Endpoints
+Plans define the parameters of each challenge tier. Cached in Redis for 24 hours. Base path: /plans
+
+5.1 Get All Plans
+GET
+/plans
+Auth: Public — No token required
+
+Returns all active challenge plans with computed amounts. This is the data displayed on the pricing page. Cached in Redis — response typically < 5ms.
+
+Query Parameters
+Parameter
+Type
+Default
+Description
+isActive
+Boolean
+true
+false returns all plans including hidden ones — Admin only
+  RESPONSE — 200 OK
+{
+  "success": true,
+  "message": "Plans fetched successfully.",
+  "data": [
+    {
+      "id": "plan-seed-uuid",
+      "name": "Seed",
+      "accountSize": 250000.00,
+      "challengeFee": 999.00,
+      "gstAmount": 179.82,
+      "totalWithGst": 1178.82,
+      "profitTarget": 8.0,
+      "profitTargetAmount": 20000.00,
+      "dailyLossLimit": 4.0,
+      "dailyLossLimitAmount": 10000.00,
+      "maxDrawdown": 8.0,
+      "maxDrawdownAmount": 20000.00,
+      "minTradingDays": 5,
+      "maxTradingDays": 45,
+      "profitSplitPct": 80.0,
+      "sortOrder": 1,
+      "isActive": true
+    },
+    { "name": "Starter", "accountSize": 500000.00, "challengeFee": 1799.00, "..." },
+    { "name": "Pro", "accountSize": 1000000.00, "challengeFee": 3299.00, "..." },
+    { "name": "Elite", "accountSize": 1500000.00, "challengeFee": 4799.00, "..." },
+    { "name": "Master", "accountSize": 2000000.00, "challengeFee": 5999.00, "..." }
+  ]
+}
+
+
+5.2 Get Single Plan
+GET
+/plans/:id
+Auth: Public
+
+  REQUEST
+GET /plans/plan-pro-uuid-here
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Plan fetched.", "data": { ...fullPlanObject } }
+
+404
+Plan not found
+6. Challenge Endpoints
+Core challenge management — purchase, tracking, dashboard data. Base path: /challenges
+
+6.1 Purchase Challenge — Step 1: Create Order
+POST
+/challenges/purchase
+Auth: Trader
+
+Step 1 of the 2-step payment flow. Creates a Razorpay order for the challenge fee + GST. The frontend opens Razorpay checkout with the returned orderId. Only one active challenge per plan per trader is allowed.
+
+  REQUEST BODY
+{ "planId": "plan-pro-uuid" }
+
+  RESPONSE — 201 CREATED
+{
+  "success": true,
+  "message": "Order created. Complete payment to activate your challenge.",
+  "data": {
+    "orderId": "order_NjGcCsRzMVMaKR",
+    "currency": "INR",
+    "baseAmount": 3299.00,
+    "gstAmount": 593.82,
+    "totalAmount": 3892.82,
+    "totalAmountPaise": 389282,
+    "planName": "Pro",
+    "accountSize": 1000000.00,
+    "razorpayKeyId": "rzp_live_xxx"
+  }
+}
+
+404
+Plan not found
+422
+Trader already has an active Pro challenge — cannot purchase same plan twice
+
+6.2 Purchase Challenge — Step 2: Verify Payment
+POST
+/challenges/payment/verify
+Auth: Trader
+
+Step 2 of payment flow. Called after Razorpay checkout completes. Verifies HMAC-SHA256 signature to confirm payment authenticity. Creates the challenge record and triggers welcome email + SMS.
+
+Field
+Type
+Required
+Notes
+razorpayOrderId
+String
+Yes
+From Step 1 response — order_xxx
+razorpayPaymentId
+String
+Yes
+From Razorpay checkout callback — pay_xxx
+razorpaySignature
+String
+Yes
+From Razorpay checkout callback — HMAC signature
+  REQUEST BODY
+{
+  "razorpayOrderId": "order_NjGcCsRzMVMaKR",
+  "razorpayPaymentId": "pay_NjGcCsRzXYZABC",
+  "razorpaySignature": "d8f3a2c1..."
+}
+
+  RESPONSE — 201 CREATED
+{
+  "success": true,
+  "message": "Challenge activated successfully! Your Pro challenge has begun.",
+  "data": {
+    "challenge": {
+      "id": "challenge-uuid-here",
+      "planId": "plan-pro-uuid",
+      "planName": "Pro",
+      "accountSize": 1000000.00,
+      "currentBalance": 1000000.00,
+      "status": "ACTIVE",
+      "startDate": "2026-03-14",
+      "expiryDate": "2026-04-28",
+      "daysRemaining": 45
+    },
+    "payment": {
+      "id": "payment-uuid",
+      "amount": 3892.82,
+      "gstAmount": 593.82,
+      "status": "SUCCESS",
+      "gstInvoiceNo": "INDI-INV-2026-00047"
+    }
+  }
+}
+
+400
+Razorpay signature verification failed — tampered or invalid payment
+422
+Payment already processed — duplicate webhook/call
+
+6.3 Get All My Challenges
+GET
+/challenges
+Auth: Trader
+
+Query Parameters
+Parameter
+Type
+Default
+Description
+status
+String
+(all)
+Filter: ACTIVE | PASSED | FAILED | EXPIRED
+page
+Integer
+1
+Page number for pagination
+limit
+Integer
+10
+Results per page — max 50
+  REQUEST
+GET /challenges?status=ACTIVE&page=1&limit=10
+
+  RESPONSE — 200 OK
+{
+  "success": true,
+  "data": [
+    {
+      "id": "challenge-uuid",
+      "planName": "Pro",
+      "accountSize": 1000000.00,
+      "currentBalance": 1045230.00,
+      "totalPnl": 45230.00,
+      "status": "ACTIVE",
+      "daysTraded": 8,
+      "daysRemaining": 37,
+      "profitTargetPct": 45.23,
+      "drawdownPct": 0.0
+    }
+  ],
+  "pagination": { "total": 3, "page": 1, "limit": 10, "totalPages": 1 }
+}
+
+
+6.4 Get Challenge Dashboard
+GET
+/challenges/:id/dashboard
+Auth: Trader — Owner only
+
+Returns the complete real-time dashboard data for a single challenge. This is the primary data source for the trading dashboard page. Combine with Socket.io for real-time updates.
+
+  RESPONSE — 200 OK
+{
+  "success": true,
+  "data": {
+    "challenge": {
+      "id": "challenge-uuid",
+      "planName": "Pro",
+      "accountSize": 1000000.00,
+      "currentBalance": 1045230.00,
+      "peakBalance": 1052000.00,
+      "totalPnl": 45230.00,
+      "dailyPnl": 3200.00,
+      "daysTraded": 8,
+      "status": "ACTIVE",
+      "startDate": "2026-03-01",
+      "expiryDate": "2026-04-15",
+      "daysRemaining": 32,
+      "brokerConnected": true,
+      "lastSyncAt": "2026-03-14T11:23:45.000Z"
+    },
+    "rules": {
+      "profitTarget": { "target": 80000.00, "current": 45230.00, "pct": 56.5, "met": false },
+      "dailyLoss": { "limit": -40000.00, "current": 3200.00, "status": "SAFE" },
+      "maxDrawdown": { "limit": -80000.00, "current": -6770.00, "pct": 8.5, "status": "SAFE" },
+      "minDays": { "required": 5, "current": 8, "met": true },
+      "daysRemaining": { "max": 45, "elapsed": 13, "remaining": 32, "status": "OK" },
+      "consistency": { "violations": 0, "status": "CLEAN" }
+    },
+    "recentTrades": [
+      {
+        "id": "trade-uuid",
+        "instrument": "NIFTY50-CE-22000",
+        "tradeType": "BUY",
+        "quantity": 50,
+        "entryPrice": 125.50,
+        "exitPrice": 189.75,
+        "pnl": 3212.50,
+        "tradeDate": "2026-03-14",
+        "entryTime": "2026-03-14T09:47:30.000Z",
+        "exitTime": "2026-03-14T11:15:00.000Z"
+      }
+    ]
+  }
+}
+
+403
+Access denied — this challenge belongs to another trader
+404
+Challenge not found
+
+6.5 Get Trade History
+GET
+/challenges/:id/trades
+Auth: Trader — Owner only
+
+Query Parameters
+Param
+Type
+Default
+Description
+page
+Integer
+1
+Page number
+limit
+Integer
+20
+Results per page — max 100
+sortBy
+String
+entryTime
+Column to sort by
+sortOrder
+String
+desc
+asc or desc
+tradeDate
+String
+(all)
+Filter by date: YYYY-MM-DD
+  REQUEST
+GET /challenges/challenge-uuid/trades?page=1&limit=20&sortOrder=desc
+
+  RESPONSE — 200 OK
+{ "success": true,
+  "data": [ { "id": "...", "instrument": "BANKNIFTY-PE-48000", "pnl": -1250.00, "..." } ],
+  "pagination": { "total": 47, "page": 1, "limit": 20, "totalPages": 3 } }
+
+
+6.6 Get Challenge Certificate
+GET
+/challenges/:id/certificate
+Auth: Trader — Owner only — PASSED only
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "certificateUrl": "https://s3.amazonaws.com/indipips-certs/cert-abc123.pdf?X-Amz-Signature=...",
+    "verificationCode": "INDI-CERT-2026-004721",
+    "expiryUrl": "URL valid for 15 minutes — regenerate if expired",
+    "passedAt": "2026-03-12T15:30:00.000Z"
+  } }
+
+403
+Challenge not passed — no certificate available
+7. Broker Integration Endpoints
+Connect and manage broker API credentials for trade syncing. Base path: /broker
+
+7.1 Connect Broker
+POST
+/broker/connect
+Auth: Trader
+
+Field
+Type
+Required
+Notes
+brokerType
+String
+Yes
+upstox or zerodha
+apiKey
+String
+Yes
+Broker developer app API key — stored encrypted
+apiSecret
+String
+Yes
+Broker developer app API secret — stored encrypted
+  REQUEST BODY
+{ "brokerType": "upstox", "apiKey": "abc123xyz", "apiSecret": "secret456" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Upstox connected successfully. Trade sync is now active.",
+  "data": { "connected": true, "brokerType": "upstox", "lastSyncAt": "2026-03-14T09:15:00.000Z" } }
+
+400
+Invalid broker credentials — API key rejected by broker
+422
+Broker already connected — disconnect first
+
+7.2 Get Broker Status
+GET
+/broker/status
+Auth: Trader
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "connected": true,
+    "brokerType": "upstox",
+    "lastSyncAt": "2026-03-14T11:18:00.000Z",
+    "isStale": false,
+    "minutesSinceSync": 2,
+    "openPositions": 1
+  } }
+
+
+7.3 Disconnect Broker
+DELETE
+/broker/disconnect
+Auth: Trader
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Broker disconnected. API keys have been permanently deleted." }
+
+422
+Cannot disconnect during active trading hours — wait until after 3:30 PM IST
+8. Payout Endpoints
+Request and manage profit withdrawals. Full KYC and bank verification required before any payout. Base path: /payouts
+
+8.1 Get Payout History
+GET
+/payouts
+Auth: Trader
+
+Query Parameters
+Param
+Type
+Default
+Description
+status
+String
+(all)
+PENDING | APPROVED | TRANSFERRED | FAILED
+page
+Integer
+1
+Page number
+limit
+Integer
+10
+Results per page
+  RESPONSE — 200 OK
+{ "success": true,
+  "data": [
+    {
+      "id": "payout-uuid",
+      "amountRequested": 15000.00,
+      "netPayoutAmount": 12600.00,
+      "tdsAmount": 4500.00,
+      "challengeFeeRefund": 3299.00,
+      "status": "TRANSFERRED",
+      "utrNumber": "326101234567890",
+      "transferredAt": "2026-03-10T14:30:00.000Z"
+    }
+  ],
+  "pagination": { "total": 2, "page": 1, "limit": 10, "totalPages": 1 } }
+
+
+8.2 Request Payout
+POST
+/payouts
+Auth: Trader
+
+Submit a new payout request. System validates KYC completion, bank verification, minimum 14 days since funded account activation, minimum payout amount of Rs. 500, and no existing pending payout.
+
+Field
+Type
+Required
+Notes
+challengeId
+String
+Yes
+Must be a PASSED/funded challenge owned by trader
+amountRequested
+Number
+Yes
+Minimum Rs. 500 — in rupees
+  REQUEST BODY
+{ "challengeId": "challenge-uuid", "amountRequested": 15000 }
+
+  RESPONSE — 201 CREATED
+{
+  "success": true,
+  "message": "Payout request submitted. Processing within 3 business days.",
+  "data": {
+    "id": "payout-uuid",
+    "amountRequested": 15000.00,
+    "grossProfit": 45230.00,
+    "traderSharePct": 80.0,
+    "traderShareAmount": 36184.00,
+    "challengeFeeRefund": 3299.00,
+    "tdsPercentage": 30.0,
+    "tdsAmount": 10855.20,
+    "netPayoutAmount": 28627.80,
+    "bankAccountLast4": "7890",
+    "status": "PENDING",
+    "requestedAt": "2026-03-14T10:00:00.000Z"
+  }
+}
+
+400
+Minimum payout amount is Rs. 500
+422
+KYC not complete — complete Aadhaar, PAN, and bank verification first
+422
+Funded account is less than 14 days old — first payout available on [date]
+422
+You already have a pending payout request
+9. WebSocket Real-Time API
+Indipips uses Socket.io for real-time dashboard updates. Connect to the WebSocket server and join your challenge room to receive live P&L updates, rule breach alerts, and trade events.
+
+9.1 Connection
+  SOCKET.IO CLIENT CONNECTION
+const socket = io('https://api.indipips.com', {
+  auth: { token: accessToken },
+  transports: ['websocket'],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
+
+9.2 Join Challenge Room
+  JOIN CHALLENGE ROOM
+// After connection — join your challenge room
+socket.emit('join:challenge', { challengeId: 'challenge-uuid' });
+
+// Server confirms join
+socket.on('joined:challenge', (data) => {
+  console.log('Joined room for challenge:', data.challengeId);
+  // data = { challengeId, currentBalance, totalPnl, dailyPnl }
+});
+
+9.3 Real-Time Events — Server to Client
+Event Name
+Trigger
+Payload
+Frontend Action
+trade:update
+New trade synced from broker
+{ pnl, dailyPnl, totalPnl, balance, peakBalance, drawdown, trade: {...} }
+Update all dashboard numbers, add trade to list
+rule:warning
+Rule approaching violation threshold (75%)
+{ rule, current, limit, pct, message }
+Show yellow warning banner
+rule:breach
+Rule violated — suspension or failure
+{ rule, reason, status, action }
+Show red alert, update status badge
+challenge:suspended
+Daily loss limit hit
+{ reason, reinstateAt }
+Show suspension modal, disable trading UI
+challenge:passed
+All pass conditions met
+{ challenge, certificateUrl }
+Show congratulations modal, confetti animation
+challenge:failed
+Permanent failure
+{ reason, retryDiscountCode }
+Show failure modal with retry offer
+challenge:expired
+Challenge expired
+{ startDate, expiryDate }
+Show expiry modal with retry offer
+payout:status
+Payout status changed
+{ payoutId, status, utrNumber? }
+Update payout history, show notification
+notification:new
+Any new notification
+{ type, title, message, actionUrl }
+Show toast notification, increment badge
+
+9.4 Client to Server Events
+Event Name
+When to Emit
+Payload
+Server Response
+join:challenge
+After login + navigate to dashboard
+{ challengeId }
+joined:challenge event
+leave:challenge
+When navigating away from dashboard
+{ challengeId }
+No response — room cleanup
+ping:alive
+Every 30 seconds to maintain connection
+{ timestamp }
+pong:alive event
+10. Webhook Endpoints (System-to-System)
+Webhook endpoints receive asynchronous events from Razorpay and broker systems. These are NOT called by frontend clients — they are called by external services. All webhooks verify cryptographic signatures before processing.
+
+10.1 Razorpay Payment Webhook
+POST
+/webhooks/razorpay
+Auth: No JWT — Razorpay Signature Verification
+
+Receives payment and payout status events from Razorpay. Always returns 200 OK immediately after signature verification — processing happens async via Bull queue. Never return 4xx to Razorpay unless signature is invalid — this prevents retries for already-processed events.
+
+Signature Verification
+  SIGNATURE VERIFICATION CODE
+const crypto = require('crypto');
+
+function verifyRazorpaySignature(payload, signature) {
+  const expectedSig = crypto
+    .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+  return crypto.timingSafeEqual(
+    Buffer.from(expectedSig), Buffer.from(signature)
+  );
+}
+
+Events Handled
+Event
+Action
+payment.captured
+Verify order, create challenge, send welcome email, generate GST invoice
+payment.failed
+Update payment status to FAILED, send failure notification
+payout.processed
+Update payout status to TRANSFERRED, store UTR number, notify trader
+payout.failed
+Update payout status to FAILED, notify trader and admin
+refund.created
+Update payment status to REFUNDED
+
+10.2 Upstox Trade Webhook
+POST
+/webhooks/upstox
+Auth: No JWT — Upstox Signature Verification
+
+Receives real-time trade execution events from Upstox. Triggers the Risk Engine on every trade. Deduplication by brokerTradeId prevents duplicate processing if Upstox retries.
+
+  UPSTOX WEBHOOK PAYLOAD EXAMPLE
+// Upstox webhook payload structure
+{
+  "type": "order_update",
+  "data": {
+    "order_id": "upstox_order_123",
+    "trade_id": "upstox_trade_456",
+    "tradingsymbol": "NIFTY50-CE-22000-2026-03-28",
+    "exchange": "NSE",
+    "transaction_type": "BUY",
+    "quantity": 50,
+    "average_price": 125.50,
+    "status": "complete",
+    "order_timestamp": "2026-03-14T09:47:30+05:30"
+  }
+}
+
+11. Admin Endpoints
+All admin endpoints require ADMIN or SUPER_ADMIN role. Admin endpoints are restricted to whitelisted IP addresses via Cloudflare Firewall. Base path: /admin
+
+11.1 Admin Dashboard KPIs
+GET
+/admin/dashboard
+Auth: Admin
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "traders": { "total": 847, "active": 823, "suspended": 24 },
+    "challenges": { "active": 312, "passedToday": 4, "failedToday": 18, "expiringThisWeek": 23 },
+    "revenue": { "today": 45980.00, "thisMonth": 847230.00, "pendingPayouts": 5 },
+    "riskExposure": { "totalFundedCapital": 45000000.00, "activeChallengeCapital": 312000000.00 },
+    "recentActivity": [ { "type": "CHALLENGE_PASSED", "trader": "A*** S***", "plan": "Pro", "at": "..." } ]
+  } }
+
+
+11.2 Get All Traders
+GET
+/admin/traders
+Auth: Admin
+
+Query Parameters
+Param
+Type
+Description
+search
+String
+Search by name, email, or phone
+status
+String
+active | suspended | all
+kycStatus
+String
+PENDING | VERIFIED | REJECTED
+page
+Integer
+Page number
+limit
+Integer
+Results per page — max 100
+
+11.3 Suspend Trader
+PUT
+/admin/traders/:id/suspend
+Auth: Admin
+
+  REQUEST BODY
+{ "reason": "Suspicious trading pattern — coordinated account abuse detected" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Trader suspended. They have been notified via email." }
+
+
+11.4 Get Payout Queue
+GET
+/admin/payouts
+Auth: Admin
+
+  REQUEST
+GET /admin/payouts?status=PENDING&page=1
+
+  RESPONSE — 200 OK
+{ "success": true, "data": [
+  {
+    "id": "payout-uuid",
+    "traderName": "Arjun Sharma",
+    "traderEmail": "arjun@gmail.com",
+    "kycStatus": "VERIFIED",
+    "planName": "Pro",
+    "amountRequested": 15000.00,
+    "netPayoutAmount": 12600.00,
+    "tdsAmount": 4500.00,
+    "bankAccountLast4": "7890",
+    "status": "PENDING",
+    "requestedAt": "2026-03-14T08:00:00.000Z",
+    "daysWaiting": 1
+  }
+] }
+
+
+11.5 Approve Payout
+PUT
+/admin/payouts/:id/approve
+Auth: Admin
+
+  REQUEST BODY
+{ "notes": "KYC verified, bank account confirmed, amount approved" }
+
+  RESPONSE — 200 OK
+{ "success": true,
+  "message": "Payout approved. Razorpay transfer initiated.",
+  "data": { "razorpayPayoutId": "pout_NjGcABCXYZ", "status": "PROCESSING" } }
+
+422
+Trader KYC not verified — cannot process payout
+
+11.6 Reject Payout
+PUT
+/admin/payouts/:id/reject
+Auth: Admin
+
+  REQUEST BODY
+{ "reason": "Bank account details mismatch — trader has been requested to re-verify bank" }
+
+  RESPONSE — 200 OK
+{ "success": true, "message": "Payout rejected. Trader has been notified via email." }
+
+
+11.7 Revenue Analytics
+GET
+/admin/analytics/revenue
+Auth: Admin
+
+Query Parameters
+Param
+Type
+Description
+period
+String
+daily | weekly | monthly | yearly
+year
+Integer
+Year filter — default current year
+month
+Integer
+Month filter (1-12) — for daily breakdown
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "period": "monthly", "year": 2026,
+    "breakdown": [
+      { "period": "2026-01", "revenue": 48000.00, "gst": 8640.00, "net": 39360.00, "challenges": 16 },
+      { "period": "2026-02", "revenue": 95000.00, "gst": 17100.00, "net": 77900.00, "challenges": 31 },
+      { "period": "2026-03", "revenue": 187000.00, "gst": 33660.00, "net": 153340.00, "challenges": 57 }
+    ],
+    "totals": { "revenue": 330000.00, "gst": 59400.00, "net": 270600.00, "challenges": 104 }
+  } }
+
+12. Public Endpoints
+No authentication required. Suitable for landing page data, certificate verification, and system health checks.
+
+12.1 Get Leaderboard
+GET
+/leaderboard
+Auth: Public
+
+  REQUEST
+GET /leaderboard?limit=20
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "leaderboard": [
+      { "rank": 1, "name": "A*** S***", "plan": "Master", "profit": 185000.00, "pct": 9.25, "passedAt": "2026-03-10" },
+      { "rank": 2, "name": "R*** K***", "plan": "Elite", "profit": 142000.00, "pct": 9.47, "passedAt": "2026-03-09" }
+    ],
+    "cachedAt": "2026-03-14T00:05:00.000Z",
+    "totalFunded": 47
+  } }
+
+
+12.2 Verify Certificate
+GET
+/certificates/verify/:code
+Auth: Public
+
+  REQUEST
+GET /certificates/verify/INDI-CERT-2026-004721
+
+  RESPONSE — 200 OK
+{ "success": true, "data": {
+    "valid": true,
+    "traderName": "Arjun S.",
+    "planName": "Pro",
+    "accountSize": 1000000.00,
+    "passedAt": "2026-03-12",
+    "verificationCode": "INDI-CERT-2026-004721"
+  } }
+
+404
+Certificate not found — invalid code
+
+12.3 Health Check
+GET
+/health
+Auth: Public
+
+  RESPONSE — 200 OK
+{ "status": "ok",
+  "timestamp": "2026-03-14T09:15:00.000Z",
+  "services": {
+    "database": "ok",
+    "redis": "ok",
+    "razorpay": "ok",
+    "upstox": "ok"
+  },
+  "version": "1.0.0"
+}
+
+13. Complete Error Code Catalog
+All error messages returned by the Indipips API. Frontend code should match on the message field for user-facing display. Error codes are consistent across all environments.
+
+13.1 Authentication Errors
+HTTP Code
+Error Message
+Cause
+Frontend Action
+401
+Access denied. No token provided.
+Authorization header missing
+Redirect to /login
+401
+Invalid or expired token.
+JWT expired or malformed
+Use refresh token, if fails redirect to /login
+401
+Invalid refresh token.
+Refresh token expired or blacklisted
+Redirect to /login — force re-login
+401
+Invalid email or password.
+Wrong credentials
+Show inline error on login form
+403
+Account suspended. Please contact support.
+isActive = false
+Show suspension message + support link
+403
+Email not verified. Please verify your email.
+emailVerified = false
+Redirect to email verification page
+423
+Account locked. Too many failed attempts.
+loginAttempts >= 5
+Show lockout timer — minutesRemaining
+
+13.2 KYC Errors
+HTTP Code
+Error Message
+Cause
+422
+KYC verification required before purchasing a challenge.
+kycStatus != VERIFIED for payout attempt
+422
+Aadhaar already verified on this account.
+Duplicate Aadhaar verification attempt
+400
+Invalid Aadhaar number format. Must be 12 digits.
+Aadhaar format validation failed
+400
+Consent is required for Aadhaar verification.
+consent field missing or false
+400
+Invalid OTP. Please try again.
+Wrong 6-digit OTP entered
+410
+OTP has expired. Please request a new one.
+OTP TTL elapsed
+503
+KYC service temporarily unavailable. Please try again.
+UIDAI/Digio API down
+422
+Full name is locked after Aadhaar verification.
+Attempt to update name post-KYC
+
+13.3 Challenge & Payment Errors
+HTTP Code
+Error Message
+Cause
+422
+You already have an active challenge for this plan.
+Duplicate active challenge same plan
+400
+Invalid payment signature.
+Razorpay HMAC signature verification failed
+422
+Payment already processed.
+Duplicate payment verification call
+404
+Plan not found or no longer available.
+Invalid planId or plan deactivated
+422
+Challenge is not in PASSED status. Certificate not available.
+Certificate requested for non-passed challenge
+403
+Access denied. This challenge belongs to another trader.
+Resource ownership violation
+
+13.4 Payout Errors
+HTTP Code
+Error Message
+Cause
+400
+Minimum payout amount is Rs. 500.
+Payout amount below minimum
+422
+Complete KYC before requesting a payout.
+kycStatus != VERIFIED
+422
+Please add and verify your bank account before requesting a payout.
+bankVerified = false
+422
+First payout available on [DATE]. Funded account must be at least 14 days old.
+14-day waiting period not elapsed
+422
+You already have a pending payout request.
+Existing PENDING payout exists
+422
+PAN card required for payouts above Rs. 50,000. Please submit your PAN.
+PAN missing for high-value payout
+422
+Insufficient balance for requested payout amount.
+Requested > available profit share
+
+13.5 Rate Limit & Server Errors
+HTTP Code
+Error Message
+Cause
+Headers
+429
+Too many requests. Please try again in 60 seconds.
+Rate limit exceeded
+Retry-After: 60
+429
+OTP limit reached. Maximum 3 OTPs per hour.
+OTP spam prevention
+Retry-After: [seconds]
+500
+Something went wrong. Please try again.
+Unexpected server error
+X-Request-ID for support
+503
+Payment service temporarily unavailable.
+Razorpay API down
+Retry-After: 30
+503
+KYC service temporarily unavailable.
+UIDAI/Digio API down
+Retry-After: 60
+14. Integration Guide — Axios Setup
+Recommended Axios configuration for the Indipips frontend. This setup handles authentication token injection, automatic refresh on 401, and consistent error handling.
+
+  AXIOS INSTANCE — src/api/axios-instance.js
+// src/api/axios-instance.js
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 15000
+});
+
+// Request interceptor — inject access token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('accessToken');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// Response interceptor — handle 401 with refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error.config;
+    if (error.response?.status === 401 && !original._retry) {
+      original._retry = true;
+      try {
+        const refreshToken = localStorage.getItem('refreshToken');
+        const { data } = await axios.post(`${import.meta.env.VITE_API_URL}/auth/refresh`,
+          { refreshToken });
+        localStorage.setItem('accessToken', data.data.tokens.accessToken);
+        localStorage.setItem('refreshToken', data.data.tokens.refreshToken);
+        original.headers.Authorization = `Bearer ${data.data.tokens.accessToken}`;
+        return api(original);
+      } catch {
+        localStorage.clear();
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
+INDIPIPS PRIVATE LIMITED  |  API Documentation  |  INDI-API-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited. Unauthorized reproduction prohibited.
+--- END OF Indipips_API_DOC_v1.0.docx ---
+
+--- START OF Indipips_BRD_FULL_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+BUSINESS REQUIREMENTS DOCUMENT
+
+Complete Business Requirements for Indipips Platform
+Document Code: INDI-BRD-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY — NOT FOR DISTRIBUTION
+Field
+Details
+Document Title
+Business Requirements Document
+Document Code
+INDI-BRD-001
+Document Type
+Business Requirements Document
+Version
+1.0 — Initial Release
+Status
+Final — Approved
+Prepared By
+Indipips Founding Team
+Date
+March 2026
+Classification
+Confidential & Proprietary
+1. Introduction
+1.1 Purpose of This Document
+This Business Requirements Document (BRD) defines the complete business requirements for the Indipips proprietary trading evaluation platform. It serves as the authoritative reference for understanding what Indipips must do from a business perspective — capturing stakeholder needs, market context, business rules, user journeys, and acceptance criteria. All development, design, and investment decisions must align with the requirements defined in this document.
+
+1.2 Document Scope
+This BRD covers the complete Indipips platform including the trader-facing web application, the administrative management system, all third-party integrations, and the financial operations layer. It does not cover implementation details, code architecture, or deployment infrastructure — those are addressed in the System Architecture Document (SAD) and Technical Architecture Document (TAD).
+
+1.3 Definitions & Abbreviations
+Term
+Full Form / Definition
+Prop Firm
+Proprietary Trading Firm — a company that provides traders with virtual capital to trade
+Challenge
+A time-bound evaluation period where a trader must meet specific profit and loss targets
+Funded Account
+A virtual trading account awarded to traders who successfully pass the challenge
+Drawdown
+The reduction in account value from the highest peak balance to the current balance
+Daily Loss Limit
+The maximum loss a trader is permitted to incur in a single trading day
+Max Drawdown
+The maximum total loss permitted from the peak balance throughout the challenge lifetime
+Profit Target
+The minimum profit a trader must achieve to pass the challenge
+Consistency Rule
+No single trading day can contribute more than 40% of total profits — prevents gambling
+Virtual Capital
+Simulated account balance used for paper trading evaluation — not real market money
+Paper Trading
+Simulated trading using real market prices but no actual money at risk
+KYC
+Know Your Customer — mandatory identity verification process required before payouts
+F&O
+Futures and Options — derivative financial instruments traded on NSE and BSE
+IST
+Indian Standard Time — UTC+5:30 — all platform operations in this timezone
+UIDAI
+Unique Identification Authority of India — government body that issues Aadhaar cards
+NEFT
+National Electronic Funds Transfer — bank transfer method used for payouts
+IMPS
+Immediate Payment Service — instant bank transfer used for payouts
+TDS
+Tax Deducted at Source — income tax deducted from payouts as per IT Act
+GST
+Goods and Services Tax — 18% applicable on all challenge fees
+MVP
+Minimum Viable Product — the first production-ready version of Indipips
+RME
+Risk Management Engine — Indipips real-time rule enforcement system
+NPS
+Net Promoter Score — measure of customer satisfaction and loyalty
+SLA
+Service Level Agreement — committed performance and uptime standards
+UAT
+User Acceptance Testing — final testing by real users before launch
+
+1.4 Document References
+Document
+Code
+Purpose
+Software Requirements Specification
+INDI-SRS-001
+Complete functional and non-functional requirements
+System Architecture Document
+INDI-SAD-001
+Technical architecture and infrastructure design
+Database Design Document
+INDI-DDD-001
+Complete database schema and data dictionary
+Technical Architecture Document
+INDI-TAD-001
+API design, coding standards, and development guidelines
+Security Policy Document
+INDI-SPD-001
+Information security standards and compliance framework
+Development Timeline
+INDI-TL-001
+60-day sprint plan and milestone tracker
+API Documentation
+INDI-API-001
+Complete API endpoint reference with examples
+2. Executive Summary
+Indipips is India's first proprietary trading evaluation platform built exclusively for Indian financial markets — empowering skilled traders with the capital they deserve, based purely on proven skill.
+
+India has become the world's largest options trading market by volume, with over 50 lakh active F&O traders monthly and a new demat account being opened every second. Despite this extraordinary market size, there exists no dedicated Indian prop firm that supports Indian instruments (Nifty 50, BankNifty, MidcapNifty, F&O, Equity Stocks), operates entirely in INR, accepts UPI/Net Banking payments, or pays out via direct NEFT/IMPS bank transfer.
+
+Global prop firms like FTMO and FundedNext charge in USD (Rs. 7,500+ for a basic account), do not support Indian instruments, operate in foreign time zones, require international payment methods, and pay out via Wise or Payoneer — creating massive friction for Indian traders. Indipips eliminates every single one of these friction points.
+
+The Indipips business model is inherently profitable and highly scalable. SEBI's own research confirms that 89% of F&O traders lose money — meaning the vast majority of challenge fees represent direct revenue. Even in the most conservative projections (50 traders/month), Indipips achieves profitability from Day 1 with break-even at just 12 traders per month. At 500 traders/month — achievable within 6 months — monthly revenue exceeds Rs. 17.5 Lakh with margins above 73%.
+
+2.1 Key Business Facts
+Metric
+Value
+Significance
+Total Addressable Market
+50 Lakh+ F&O traders
+Massive untapped market for Indian prop firm
+Current Indian Prop Firms
+< 5 (poorly built)
+First-mover advantage — no real competition
+India Options Volume
+#1 globally by volume
+World's largest options market = our playground
+F&O Traders Who Lose Money
+89% (SEBI report)
+Core profitability driver — most fail the challenge
+Break-Even Point
+12 traders/month
+Extremely low — profitability from Month 1
+Year 1 Revenue Projection
+Rs. 80 Lakh
+Based on 500 traders/month by Month 6
+Gross Margin
+73-78%
+High-margin fintech business model
+Lowest Entry Price
+Rs. 999
+10x cheaper than cheapest global competitor
+Tech Build Cost
+Rs. 0 (AI-assisted)
+Competitive advantage — zero dev cost
+3. Business Context & Market Analysis
+3.1 Indian Financial Market Overview
+India's financial markets have undergone a revolutionary transformation between 2020 and 2026. The COVID-19 pandemic triggered an unprecedented wave of retail participation, with demat account registrations growing from 4 crore in 2020 to over 14 crore by 2025. More significantly for Indipips, India's derivatives market — specifically options trading — has exploded to become the largest in the world by contract volume, surpassing the United States, Europe, and all Asian markets combined.
+
+Market Indicator
+2020
+2023
+2026 (Current)
+Growth
+Total Demat Accounts
+4 Crore
+10 Crore
+14+ Crore
+250%
+Monthly F&O Traders
+15 Lakh
+35 Lakh
+50+ Lakh
+233%
+Daily Options Contracts
+2 Crore
+5 Crore
+8+ Crore
+300%
+Retail F&O Participation
+35%
+55%
+65%
+85% growth
+India Global Options Rank
+#5
+#2
+#1
+Top of world
+Average Trader Age
+32 years
+29 years
+27 years
+Getting younger
+Mobile Trading Users
+60%
+78%
+88%
+Mobile-first market
+
+3.2 The Trader Pain Points — Primary Research
+The following pain points were identified through analysis of Indian trading communities, forums, and social media discussions among F&O traders:
+
+3.2.1 Capital Access Problem
+The most fundamental barrier for skilled Indian traders is capital. A trader with a Rs. 1 Lakh account targeting 8% monthly returns earns Rs. 8,000 per month — barely subsistence income. The same skill applied to a Rs. 10 Lakh account generates Rs. 80,000 per month. The mathematical reality is that trading skill without adequate capital produces minimal returns. Indipips solves this by providing virtual capital of Rs. 2.5 Lakh to Rs. 20 Lakh based purely on demonstrated skill.
+
+3.2.2 Global Platform Friction
+Pain Point
+Global Platforms
+Indipips Solution
+Currency
+USD/EUR — conversion fees 2-3%
+100% INR — zero conversion
+Payment Methods
+Only international cards/wire
+UPI, Net Banking, Debit/Credit Card
+Instruments Supported
+Forex, global indices — no Nifty
+Nifty 50, BankNifty, MidcapNifty, F&O, Equity
+Payout Method
+Wise, Payoneer, Wire — 3-5% fees
+NEFT/IMPS — zero fees, direct to bank
+Support Hours
+CET/EST timezone — 3-9 AM IST
+9 AM - 6 PM IST — Indian business hours
+Language
+English only
+English — Hindi Phase 2
+Tax Compliance
+No TDS, no GST invoice
+Full GST invoice + TDS compliance
+KYC
+Passport-based — complex for Indians
+Aadhaar + PAN — 2-minute verification
+Entry Cost
+$32-$89 (Rs. 2,700-7,500)
+Rs. 999-5,999 — 70% cheaper
+
+3.3 Competitive Landscape — Detailed Analysis
+Feature
+FTMO
+FundedNext
+Funding Pips
+The Funded Trader
+INDIPIPS
+Founded
+2015
+2022
+2022
+2021
+2026
+HQ
+Czech Republic
+Bangladesh
+UAE
+USA
+India
+Indian Instruments
+No
+No
+No
+No
+YES
+INR Currency
+No
+No
+No
+No
+YES
+UPI Payment
+No
+No
+No
+No
+YES
+NEFT Payout
+No
+No
+No
+No
+YES
+Algo Trading
+Restricted
+Limited
+Yes
+Restricted
+Fully YES
+Entry Price
+€89 (~Rs.8K)
+$32 (~Rs.2.7K)
+$29 (~Rs.2.5K)
+$65 (~Rs.5.5K)
+Rs. 999
+Aadhaar KYC
+No
+No
+No
+No
+YES
+IST Operations
+No
+No
+No
+No
+YES
+Indian Tax Docs
+No
+No
+No
+No
+GST+TDS
+Indian Community
+No
+No
+No
+No
+YouTube+Telegram
+
+Indipips wins on every single dimension that matters to an Indian trader. This is not incremental improvement — it is a fundamentally better product for the Indian market.
+4. Business Objectives & Goals
+4.1 Primary Business Objectives
+Objective
+Description
+Target
+Timeline
+Market Entry
+Launch production platform with all core features
+Go live with MVP
+Week 8 (Day 60)
+Initial Traction
+Onboard first paying traders
+50 traders/month
+Month 1-2
+Break-Even
+Achieve monthly profitability
+12 traders/month
+Month 1
+Growth
+Scale trader volume significantly
+500 traders/month
+Month 6
+Brand Building
+Establish Indipips as top Indian prop firm
+#1 Indian prop firm
+Month 12
+Investment Ready
+Build traction for investor pitch
+Live platform + revenue
+Month 3-4
+Series A
+Raise growth capital
+Rs. 2-5 Crore
+Month 12-18
+Expansion
+Enter Southeast Asian markets
+Malaysia, Singapore
+Year 3
+
+4.2 SMART Goals — Year 1
+Goal
+Specific
+Measurable
+Achievable
+Relevant
+Time-Bound
+Revenue
+Rs. 80 Lakh annual revenue
+Monthly P&L report
+Yes — 500 traders at Rs. 3.5K avg
+Core business objective
+By Month 12
+Traders
+2,000 registered traders
+Admin dashboard count
+Yes — 167/month growth
+Market penetration
+By Month 12
+Pass Rate
+10-15% challenge pass rate
+Challenge status analytics
+Industry standard rate
+Business model validation
+Ongoing
+Uptime
+99.9% platform availability
+Monitoring tools
+Yes — robust infrastructure
+Trader trust
+Ongoing
+NPS
+NPS score above 50
+Quarterly survey
+Achievable with quality product
+Brand building
+By Month 6
+Payouts
+Rs. 10 Lakh+ total payouts
+Payout ledger
+Yes — validates business model
+Trader trust and PR
+By Month 12
+5. Stakeholder Analysis
+5.1 Stakeholder Register
+Stakeholder
+Type
+Interest
+Influence
+Engagement Strategy
+Traders (Primary Users)
+External
+Fair evaluation, funded capital, transparent rules, timely payouts
+High
+Regular communication, leaderboard recognition, community building
+Indipips Founders
+Internal
+Revenue, growth, product quality, investor returns
+Highest
+Daily involvement in all decisions
+Angel Investors (Future)
+External
+ROI, market share, scalability proof
+High
+Monthly reports, live platform demo, financial transparency
+Broker Partners (Upstox/Zerodha)
+External
+API usage, user acquisition, compliance
+Medium
+API partnership agreements, co-marketing opportunities
+UIDAI / KYC Provider (Digio)
+External
+Compliance, API revenue, data security
+Medium
+API service agreements, UIDAI compliance
+Razorpay
+External
+Transaction fees (2%), platform growth
+Medium
+Business account management, webhook reliability
+SEBI / RBI
+External
+Market integrity, consumer protection, compliance
+High
+Proactive compliance, legal consultation
+Trading Influencers
+External
+Commission income, audience value
+Medium
+Affiliate program, performance tracking, regular updates
+CA / Legal Advisor
+External
+Professional fees, reputation
+Medium
+Monthly consultation, compliance filing
+Development Team (AI-assisted)
+Internal
+Technical excellence, product quality
+High
+Daily collaboration on all features
+
+5.2 Stakeholder Communication Plan
+Stakeholder
+Communication Type
+Frequency
+Channel
+Owner
+Active Traders
+P&L updates, rule alerts, payout status
+Real-time
+Email, SMS, In-app
+Platform (automated)
+New Traders
+Welcome series, how-to guides
+Registration + Day 3/7
+Email
+Marketing
+Funded Traders
+Payout reminders, scaling opportunities
+Bi-weekly
+Email + WhatsApp
+Admin
+Investors
+Progress reports, financials, KPIs
+Monthly
+Email report + call
+Founder
+Affiliates
+Commission statements, performance
+Monthly
+Email dashboard
+Marketing
+All Users
+Platform updates, maintenance
+As needed
+Email + In-app banner
+Tech
+6. Business Model — Full Detail
+6.1 Revenue Model Deep Dive
+6.1.1 Primary Revenue — Challenge Fees
+Challenge fees are the primary and most reliable revenue stream. Every trader pays a one-time fee to activate their challenge account. This fee is non-refundable if the trader fails (which 85-90% do statistically). The fee is refunded as a credit in the first successful payout for traders who pass.
+
+Plan
+Account Size
+Fee
+Fee as % of Account
+Pass Rate
+Revenue Kept per 100 Challengers
+Seed
+Rs. 2.5 Lakh
+Rs. 999
+0.40%
+13%
+Rs. 86,914
+Starter
+Rs. 5 Lakh
+Rs. 1,799
+0.36%
+13%
+Rs. 1,56,513
+Pro
+Rs. 10 Lakh
+Rs. 3,299
+0.33%
+13%
+Rs. 2,87,013
+Elite
+Rs. 15 Lakh
+Rs. 4,799
+0.32%
+13%
+Rs. 4,17,513
+Master
+Rs. 20 Lakh
+Rs. 5,999
+0.30%
+12%
+Rs. 5,27,912
+
+6.1.2 Revenue Streams — Complete List
+Stream
+Model
+Rate
+Timeline
+Est. Monthly (Month 6)
+Challenge Fees
+One-time per challenge
+Rs. 999-5,999
+From Day 1
+Rs. 15-17 Lakh
+Retry Fees
+Discounted retake — 20% off
+Rs. 799-4,799
+From Day 1
+Rs. 1-2 Lakh
+Referral (Platform)
+10% of referee's first fee
+Variable
+From Day 1
+Viral growth driver
+Affiliate Commission
+15% per referred sale
+Variable
+Month 2+
+Rs. 50K-2L
+Educational Courses
+Fixed price per course
+Rs. 2,000-10,000
+Month 6+
+Rs. 20-50K
+Trading Tools Sub
+Monthly subscription
+Rs. 299-999/month
+Year 2
+Rs. 50K-2L
+Premium Certificate
+Verified physical certificate
+Rs. 499
+Month 4+
+Rs. 10-20K
+Community Membership
+Private Discord/group
+Rs. 199/month
+Month 6+
+Rs. 20-50K
+
+6.2 Financial Projections — Detailed
+Month
+Challengers
+Avg Fee
+Gross Revenue
+GST (18%)
+Net Revenue
+Payouts
+Op Costs
+Net Profit
+Margin
+1
+50
+Rs.3,000
+Rs.1,50,000
+Rs.27,000
+Rs.1,23,000
+Rs.20,000
+Rs.35,000
+Rs.68,000
+55%
+2
+75
+Rs.3,000
+Rs.2,25,000
+Rs.40,500
+Rs.1,84,500
+Rs.30,000
+Rs.35,000
+Rs.1,19,500
+65%
+3
+100
+Rs.3,000
+Rs.3,00,000
+Rs.54,000
+Rs.2,46,000
+Rs.40,000
+Rs.35,000
+Rs.1,71,000
+70%
+4
+150
+Rs.3,200
+Rs.4,80,000
+Rs.86,400
+Rs.3,93,600
+Rs.65,000
+Rs.40,000
+Rs.2,88,600
+73%
+5
+250
+Rs.3,200
+Rs.8,00,000
+Rs.1,44,000
+Rs.6,56,000
+Rs.1,08,000
+Rs.50,000
+Rs.4,98,000
+76%
+6
+500
+Rs.3,500
+Rs.17,50,000
+Rs.3,15,000
+Rs.14,35,000
+Rs.2,36,000
+Rs.60,000
+Rs.11,39,000
+79%
+9
+750
+Rs.3,500
+Rs.26,25,000
+Rs.4,72,500
+Rs.21,52,500
+Rs.3,54,000
+Rs.75,000
+Rs.17,23,500
+80%
+12
+1000
+Rs.4,000
+Rs.40,00,000
+Rs.7,20,000
+Rs.32,80,000
+Rs.5,40,000
+Rs.1,00,000
+Rs.26,40,000
+81%
+
+6.3 Break-Even Analysis
+Cost Component
+Monthly Amount
+Nature
+Server & Hosting (Railway/Vercel)
+Rs. 7,000
+Fixed — scales post-investment
+Database (Supabase)
+Rs. 1,500
+Fixed — free tier initially
+Email Service (SendGrid)
+Rs. 0
+Fixed — free tier 100/day
+SMS Service (MSG91)
+Rs. 2,000
+Variable — scales with users
+KYC API (Digio/Signzy)
+Rs. 3,000
+Variable — Rs. 5-10/verification
+Payment Gateway (Razorpay)
+Rs. 3,000
+Variable — 2% per transaction
+Domain & SSL
+Rs. 85
+Fixed — annual
+Monitoring (Sentry)
+Rs. 0
+Fixed — free tier
+Miscellaneous
+Rs. 2,000
+Fixed — tools, subscriptions
+Total Monthly Fixed Cost
+Rs. 18,585
+
+Break-Even (Rs.3,000 avg fee)
+7 traders/month
+Extremely low barrier
+7. Complete User Journey Maps
+7.1 New Trader — Complete Registration Journey
+Step
+User Action
+System Response
+Validation
+Time
+1
+Visits indipips.com
+Landing page loads with hero, plans, how it works
+Page load < 2 seconds
+0:00
+2
+Clicks 'Start Your Challenge'
+Scroll to plans section or navigate to /register
+CTA visible above fold
+0:10
+3
+Selects a plan (e.g., Pro)
+Plan detail modal opens — shows all rules and fees
+Plan details accurate
+0:30
+4
+Clicks 'Buy Challenge'
+Redirected to /register if not logged in
+Auth state check
+0:35
+5
+Fills registration form
+Real-time validation on each field
+Email format, phone 10 digits, password strength
+1:00
+6
+Submits registration
+OTP sent to mobile, email verification sent
+Duplicate email/phone check
+1:05
+7
+Enters mobile OTP
+OTP verified, phone marked as verified
+OTP valid within 10 minutes
+1:30
+8
+Verifies email
+Email link clicked, email marked verified
+Link valid 24 hours
+Variable
+9
+Redirected to checkout
+Plan pre-selected, GST shown, total displayed
+KYC not required yet
+2:00
+10
+Pays via UPI/Card
+Razorpay checkout opens in modal
+Payment amount matches plan fee + GST
+2:30
+11
+Payment confirmed
+Challenge account created, dashboard unlocked
+Webhook verified within 3 seconds
+2:33
+12
+Welcome email received
+Email with challenge details, rules, broker connect guide
+All plan details accurate
+2:35
+13
+Connects broker API
+Upstox OAuth flow, API key stored encrypted
+API connection verified
+5:00
+14
+Views dashboard
+Real-time P&L, rules checklist, timer all visible
+All values match plan specs
+5:30
+
+7.2 Challenge Pass Journey
+Step
+Trigger
+System Action
+Notification
+Challenge Active
+Payment confirmed
+RME activated, broker sync started
+Welcome email + SMS
+Day 1 Trade
+First trade via broker
+P&L updated, daysTraded = 1, dashboard refreshed
+In-app real-time update
+50% Profit Target
+totalPnl >= accountSize * 4%
+Email alert sent, dashboard progress bar updated
+Email + in-app
+75% Profit Target
+totalPnl >= accountSize * 6%
+Email + SMS alert, dashboard highlights green
+Email + SMS + in-app
+Min Days Met
+daysTraded >= 5
+Unlock pass eligibility, show 'Almost There' badge
+In-app notification
+Profit Target Met
+totalPnl >= accountSize * 8% AND daysTraded >= 5
+RME triggers pass evaluation
+In-app popup
+All Rules Checked
+Post-close evaluation at 3:31 PM
+All 8 rules verified — no violations
+System validation
+Challenge PASSED
+All conditions met
+Status → PASSED, funded account created
+Congratulations email + SMS
+Certificate Generated
+Challenge PASSED
+PDF certificate generated, uploaded to S3
+Email with certificate link
+Funded Account Live
+Certificate generated
+New challenge record with funded account size
+Email with funded account details
+First Payout Eligible
+14 days after funded account activation
+Payout request button enabled
+Email reminder
+Payout Requested
+Trader submits request
+KYC validation, amount validation, queue entry
+Confirmation email
+Payout Approved
+Admin approves
+Razorpay Payout API initiated, TDS calculated
+Approval email
+Fee Refunded
+First payout transferred
+Challenge fee credited to payout
+Email with breakdown
+Bank Transfer
+Razorpay NEFT/IMPS
+Amount minus TDS transferred to bank
+Transfer confirmation SMS
+
+7.3 Challenge Fail Journey
+Fail Scenario
+Trigger
+Immediate Action
+Within 5 Minutes
+Next Day
+Daily Loss Limit Hit
+dailyPnl <= -(accountSize*0.04)
+Account suspended for day — no new trades
+Email + SMS with reason
+Account auto-reinstates at 9:15 AM
+Max Drawdown Hit
+Peak-Current >= accountSize*0.08
+Challenge PERMANENTLY closed
+Email + SMS with reason + retry offer
+20% discount code sent
+Time Expired
+Current date > expiryDate
+Status → EXPIRED at midnight cron
+Email with summary + retry offer
+20% discount code sent
+Consistency Violation
+Single day > 40% of total profit
+Warning first (3 warnings allowed)
+Warning email with explanation
+3rd violation = account closure
+
+7.4 Admin — Daily Operations Journey
+Time
+Task
+Admin Action
+System Support
+9:00 AM
+Morning review
+Check overnight alerts, review any breached accounts
+Sentry alerts, admin dashboard KPIs
+9:15 AM
+Market open
+Monitor real-time risk exposure dashboard
+Risk monitor — color-coded drawdown table
+Throughout day
+Payout queue
+Review and process pending payout requests
+Payout queue with trader KYC status
+12:00 PM
+Revenue check
+Review daily revenue and new registrations
+Analytics dashboard
+3:30 PM
+Market close
+Review end-of-day challenge evaluations
+Cron job results in admin log
+4:00 PM
+KYC queue
+Process pending KYC document reviews
+KYC queue with document viewer
+5:00 PM
+Support tickets
+Respond to trader queries
+Support ticket system
+6:00 PM
+Daily report
+Review day's metrics and plan next day
+Exportable daily report
+8. Business Rules — Exhaustive Definition
+8.1 Challenge Rules
+Rule ID
+Rule Name
+Value
+Measurement
+Reset
+Violation Action
+BR-001
+Profit Target
+8% of account size
+(currentBalance - accountSize) / accountSize * 100
+N/A — cumulative
+Pass trigger when met + all other rules complied
+BR-002
+Maximum Daily Loss
+4% of account size
+dailyPnl / accountSize * 100
+9:15 AM IST daily
+Account suspended for rest of trading day
+BR-003
+Maximum Overall Drawdown
+8% of account size
+(peakBalance - currentBalance) / accountSize * 100
+Never resets
+Challenge permanently closed
+BR-004
+Minimum Trading Days
+5 calendar days
+Count of distinct dates with >= 1 trade
+N/A
+Required for pass — blocks pass not fails
+BR-005
+Maximum Challenge Duration
+45 calendar days
+Current date - startDate
+N/A
+Challenge auto-expires — status EXPIRED
+BR-006
+Consistency Rule
+Single day <= 40% of total profit
+Max single day P&L / totalPnl * 100
+N/A — cumulative
+Warning x3 then account closure
+BR-007
+Market Hours Only
+9:15 AM - 3:15 PM IST
+Trade entry and exit timestamps
+N/A
+Out-of-hours trade flagged — 3 violations = disqualification
+BR-008
+No Overnight Positions
+All positions closed by 3:15 PM IST
+Open position check at 3:31 PM
+Daily at 3:31 PM
+Open positions at close = warning, P&L counted against daily loss
+BR-009
+No News Trading
+30 min before/after major events
+RBI policy, Union Budget, Election results
+Per event
+Warning for first violation, disqualification for second
+BR-010
+No Martingale Strategy
+Auto-detected pattern analysis
+Position sizing pattern analysis
+N/A
+Immediate account closure — no warning
+BR-011
+No Copy Trading
+IP and pattern analysis
+Same trades within 5 seconds across accounts
+N/A
+Immediate account closure — no warning
+BR-012
+Algo/Bot Trading
+Fully permitted
+N/A
+N/A
+No restriction — major Indipips advantage
+
+8.2 Payout Business Rules
+Rule ID
+Rule
+Condition
+Action on Violation
+PR-001
+Minimum Payout
+Rs. 500 minimum withdrawal
+Reject with message — minimum not met
+PR-002
+First Payout Timing
+14 calendar days after funded account activation
+Payout button disabled until day 14
+PR-003
+Payout Frequency
+Bi-weekly maximum (every 14 days)
+Next payout blocked until 14 days elapsed
+PR-004
+KYC Requirement
+Full KYC must be VERIFIED before any payout
+Payout request blocked — redirect to KYC
+PR-005
+PAN Requirement
+PAN required for payouts above Rs. 50,000
+Payout blocked — request PAN submission
+PR-006
+Bank Verification
+Bank account must be verified before payout
+Payout blocked — request bank details
+PR-007
+Active Account
+Account must not be suspended to request payout
+Payout blocked — show suspension reason
+PR-008
+TDS Deduction
+30% TDS on net profit portion of payout
+Auto-calculated — shown before confirmation
+PR-009
+GST on Fee
+18% GST included in challenge fee — not separate
+GST invoice auto-generated
+PR-010
+Fee Refund
+Challenge fee refunded with FIRST payout only
+Auto-applied — shows in payout breakdown
+PR-011
+Profit Split
+80% trader / 20% Indipips at funded stage
+Auto-calculated in payout amount
+PR-012
+Processing Time
+Admin must process within 3 business days
+SLA alert to admin after 48 hours pending
+
+8.3 Account Management Rules
+Rule ID
+Rule
+Details
+AR-001
+One Active Challenge
+Trader can have only 1 active challenge per plan at a time
+AR-002
+Multiple Plans
+Trader can run challenges on different plans simultaneously
+AR-003
+Account Suspension
+Suspended accounts cannot login, trade, or request payouts
+AR-004
+Account Reinstatement
+Only SUPER_ADMIN can permanently reinstate a suspended account
+AR-005
+Daily Suspension Auto-Lift
+Daily loss limit suspension auto-lifts at 9:15 AM next trading day
+AR-006
+KYC Lock
+After Aadhaar verification — name is locked and cannot be changed
+AR-007
+Email Lock
+Email cannot be changed after registration
+AR-008
+Phone Update
+Phone can be updated — requires new OTP verification
+AR-009
+Referral Code
+Referral code is permanent — cannot be changed after generation
+AR-010
+Wallet Balance
+Wallet balance can only be used at challenge purchase — not redeemed as cash
+AR-011
+Data Deletion
+Account deletion requests processed within 30 days — financial records retained per law
+AR-012
+Age Restriction
+Minimum age 18 — enforced via Aadhaar date of birth verification
+9. Acceptance Criteria — Feature by Feature
+9.1 Authentication System
+Feature
+Acceptance Criterion
+Test Case
+Pass Condition
+Registration
+Trader registers with valid data
+POST /auth/register with valid fullName, email, phone, password
+201 response, user created in DB, OTP sent
+Duplicate Email
+Duplicate email rejected
+POST /auth/register with existing email
+400 response, 'Email already registered' message
+Password Strength
+Weak passwords rejected
+POST /auth/register with password '12345'
+400 response, password strength error
+Login
+Valid credentials accepted
+POST /auth/login with correct email+password
+200 response, accessToken + refreshToken returned
+Wrong Password
+Invalid credentials rejected
+POST /auth/login with wrong password
+401 response, 'Invalid email or password'
+Suspended Account
+Suspended accounts blocked
+POST /auth/login with suspended account
+403 response, suspension message shown
+JWT Protection
+Protected routes require token
+GET /auth/profile without Authorization header
+401 response, 'Access denied. No token provided'
+Token Expiry
+Expired tokens rejected
+Request with expired JWT
+401 response, 'Invalid or expired token'
+
+9.2 Challenge System
+Feature
+Acceptance Criterion
+Test Case
+Pass Condition
+Plan Display
+All 5 plans displayed correctly
+GET /plans
+5 plans returned with correct amounts, percentages, fees
+Challenge Purchase
+Payment creates challenge
+POST /challenges/purchase → payment → verify
+Challenge record created with correct accountSize, dates, status ACTIVE
+Dashboard Data
+Real-time stats correct
+GET /challenges/:id/dashboard
+Returns currentBalance, totalPnl, dailyPnl, daysTraded, rules status
+Trade Sync
+Broker trades update dashboard
+Simulated trade via Upstox API
+Trade stored in DB, P&L updated, Socket.io event emitted
+Daily Loss Trigger
+Account suspended on 4% daily loss
+Simulate trades hitting 4% daily loss
+Account status → SUSPENDED, email sent within 5 minutes
+Max Drawdown Trigger
+Challenge closed on 8% drawdown
+Simulate trades hitting 8% drawdown
+Challenge status → FAILED, email + SMS sent
+Pass Trigger
+Challenge passes when all conditions met
+Simulate 8% profit + 5 days + all rules
+Challenge status → PASSED, funded account created, certificate generated
+Challenge Expiry
+Expired challenges auto-closed
+Set expiryDate to past, run cron
+Challenge status → EXPIRED, email sent
+
+9.3 KYC System
+Feature
+Acceptance Criterion
+Test Case
+Pass Condition
+Aadhaar OTP
+OTP sent to Aadhaar-linked mobile
+POST /kyc/aadhaar/initiate with valid Aadhaar
+OTP sent, kycStatus remains PENDING
+Aadhaar Verify
+Valid OTP verifies Aadhaar
+POST /kyc/aadhaar/verify with correct OTP
+aadhaarVerified = true, name auto-populated
+Wrong OTP
+Invalid OTP rejected
+POST /kyc/aadhaar/verify with wrong OTP
+400 response, verification failed message
+Bank Verify
+Valid bank details accepted
+POST /kyc/bank with valid account+IFSC
+Bank details saved, kycStatus → VERIFIED
+KYC Gating
+Payout blocked without KYC
+POST /payouts without complete KYC
+400 response, KYC required message
+
+9.4 Payment System
+Feature
+Acceptance Criterion
+Test Case
+Pass Condition
+Order Creation
+Razorpay order created correctly
+POST /challenges/purchase
+Razorpay order ID returned, amount matches plan fee + 18% GST
+Payment Verification
+Webhook confirms payment
+Razorpay test payment + webhook
+Challenge created, payment record stored, welcome email sent
+Failed Payment
+Failed payment handled
+Simulate Razorpay payment failure
+400 response, payment record with FAILED status, retry prompt
+GST Invoice
+Invoice auto-generated
+Complete payment flow
+GST invoice emailed with correct 18% amount
+Fee Refund
+Fee refunded with first payout
+Complete challenge → payout flow
+First payout includes challenge fee refund in breakdown
+10. Non-Functional Business Requirements
+10.1 Performance Requirements
+Requirement
+Metric
+Target
+Measurement Method
+Page Load Time
+Time to Interactive
+< 2 seconds on 4G
+Google Lighthouse audit
+API Response Time
+95th percentile response
+< 500ms
+Railway + Sentry performance
+Real-time Updates
+P&L update latency
+< 5 seconds from trade execution
+Manual timing test
+Payment Processing
+Webhook to challenge creation
+< 10 seconds
+Razorpay webhook logs
+Dashboard Load
+Challenge dashboard data
+< 1 second
+API response time monitoring
+Concurrent Users (MVP)
+Simultaneous active users
+1,000 users
+k6 load testing
+Database Queries
+Standard query time
+< 100ms P95
+PostgreSQL EXPLAIN ANALYZE
+Certificate Generation
+PDF generation time
+< 30 seconds
+Timed generation test
+
+10.2 Availability Requirements
+Requirement
+Standard
+Calculation
+Maintenance Window
+Platform Uptime
+99.9% SLA
+< 8.7 hours downtime per year
+Sundays 1:00-4:00 AM IST
+API Availability
+99.9%
+< 8.7 hours downtime per year
+Same as platform
+Database Availability
+99.95%
+< 4.4 hours downtime per year
+Automated failover
+Payment Gateway
+Razorpay SLA
+99.99% (Razorpay guarantee)
+Razorpay managed
+Recovery Time (RTO)
+4 hours maximum
+Time from failure to recovery
+Disaster recovery plan
+Recovery Point (RPO)
+1 hour maximum
+Maximum data loss window
+Hourly DB snapshots
+
+10.3 Compliance Requirements
+Regulation
+Requirement
+Implementation
+Verification
+GST Act 2017
+18% GST on all challenge fees, monthly GSTR filing
+Auto-generate GST invoices via Razorpay, CA-managed filing
+Monthly GST return filed
+Income Tax Act
+TDS deduction on payouts, Form 16A issuance
+Auto-calculate TDS, integrate with payout flow
+TDS certificate issued
+PMLA 2002
+KYC for transactions above Rs. 50,000
+Mandatory PAN for payouts above Rs. 50K
+Compliance audit quarterly
+UIDAI Guidelines
+No Aadhaar storage, OTP-based only, consent required
+Store only verification status + masked last 4 digits
+UIDAI compliance checklist
+PDPB (India)
+Data minimization, purpose limitation, deletion rights
+Privacy policy, consent flows, data deletion API
+Annual privacy audit
+Companies Act 2013
+Annual compliance for Pvt Ltd
+CA-managed filings, board minutes, statutory registers
+Annual ROC filing
+IT Act 2000
+Cybersecurity standards, data retention 7 years
+AES-256 encryption, 7-year retention policy
+Security audit annually
+11. Risk Register — Business Risks
+Risk ID
+Risk
+Probability
+Impact
+Mitigation
+Owner
+BR-R001
+Higher than expected pass rate reduces profitability
+Low
+High
+Tighten challenge rules if pass rate exceeds 20%; add consistency rule enforcement
+Founder
+BR-R002
+Payout demand exceeds revenue reserve
+Low
+Critical
+Maintain minimum 3-month payout reserve fund; stagger payout approvals
+Finance
+BR-R003
+SEBI classifies platform as investment advisor
+Low
+Critical
+Maintain clear T&C that all accounts are simulated; legal opinion obtained pre-launch
+Legal
+BR-R004
+Razorpay account suspended
+Low
+High
+Register backup payment gateway (PayU/Cashfree); comply with all Razorpay KYC
+Tech
+BR-R005
+Broker API changes break trade sync
+Medium
+High
+Integrate 2 brokers (Upstox + Zerodha); build manual trade entry fallback
+Tech
+BR-R006
+Trader fraud — coordinated account passing
+Medium
+Medium
+Device fingerprinting, IP monitoring, pattern analysis across accounts
+Risk
+BR-R007
+Negative social media campaign
+Low
+High
+Build strong community, respond quickly to issues, maintain transparent operations
+Marketing
+BR-R008
+Key founder unavailability
+Low
+High
+Document all processes, build team, AI-assisted development reduces single-point dependency
+Operations
+BR-R009
+UIDAI API provider shutdown
+Low
+Medium
+Maintain relationship with 2 KYC providers; manual KYC fallback
+Tech
+BR-R010
+Competitive response from global firms
+Medium
+Medium
+First-mover advantage + deep India focus + INR pricing creates moat
+Business
+12. Glossary of Business Terms
+Term
+Definition
+Account Size
+The virtual capital allocated to a trader's challenge account — not real money
+Active Challenge
+A challenge currently in progress — status = ACTIVE
+Algo Trading
+Automated trading using computer programs/bots — fully permitted on Indipips
+Broker API
+Programming interface provided by broker (Upstox/Zerodha) to access trading data
+Challenge Fee
+One-time payment to activate a challenge account
+Consistency Rule
+No single trading day can account for more than 40% of total profits
+Daily Loss Limit
+Maximum loss permitted in a single trading day — resets at 9:15 AM IST
+Daily P&L
+Net profit or loss for the current trading day only
+Days Traded
+Count of distinct calendar days on which at least one trade was executed
+Drawdown
+Reduction in account value from highest peak to current balance
+Expiry Date
+The date on which an uncompleted challenge automatically expires (start + 45 days)
+F&O
+Futures and Options — financial derivatives traded on NSE/BSE
+Funded Account
+Virtual trading account with higher capital awarded after passing the challenge
+GST Invoice
+Tax invoice issued for challenge fee collection — 18% GST
+KYC
+Know Your Customer — mandatory identity verification required for payouts
+Max Drawdown
+The maximum permitted total loss from peak balance — 8% of account size
+Paper Trading
+Simulated trading using real market prices but no real capital at risk
+Pass Rate
+Percentage of challengers who successfully meet all challenge conditions
+Peak Balance
+Highest account balance ever reached — used to calculate drawdown
+Profit Split
+Division of profits between trader and Indipips — starts at 80%/20%
+Profit Target
+Minimum profit required to pass the challenge — 8% of account size
+Retry Discount
+20% discount on challenge fee offered to traders who fail their challenge
+Scaling
+Increasing funded account size upon achieving profit milestones
+Simulated Account
+A virtual trading account — all profits/losses are tracked but not real market positions
+TDS
+Tax Deducted at Source — auto-deducted from payouts per Income Tax Act
+Virtual Capital
+Simulated account balance — used for evaluation only, not real market funds
+Wallet Balance
+Accumulated referral earnings — redeemable at challenge purchase only
+INDIPIPS PRIVATE LIMITED  |  Business Requirements Document (BRD)  |  INDI-BRD-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited. Unauthorized reproduction prohibited.
+--- END OF Indipips_BRD_FULL_v1.0.docx ---
+
+--- START OF Indipips_DDD_FULL_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+DATABASE DESIGN DOCUMENT
+
+Complete Schema, Data Dictionary, Indexes & Migration Strategy
+Document Code: INDI-DDD-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY
+Field
+Details
+Document Code
+INDI-DDD-001
+Version
+1.0 — Initial Release
+Status
+Final — Approved
+Prepared By
+Indipips Founding Team
+Date
+March 2026
+1. Database Overview
+Indipips uses PostgreSQL 15 as its primary relational database, managed through Prisma ORM. The database is the single source of truth for all platform data. It is designed to handle high-volume financial transactions with strict ACID compliance, complete referential integrity, and query performance optimized for the real-time risk monitoring requirements.
+
+1.1 Core Design Principles
+All monetary values stored as BigInt in paise (100 paise = 1 Indian rupee) to completely eliminate floating-point precision errors that are catastrophic in financial calculations
+UUID primary keys (v4) for all tables — prevents enumeration attacks and supports future distributed system architecture
+Soft deletes only — isActive boolean flag — no hard deletes on any user or financial data
+All tables include createdAt timestamp; all mutable tables include updatedAt with @updatedAt auto-management
+Foreign key constraints enforced at database level — Prisma cannot be bypassed
+Append-only financial records — Payment and Payout tables never have rows updated after creation
+Sensitive columns (bank account, API keys) stored in encrypted form using application-level AES-256 before DB insert
+All indexes documented and justified — no redundant indexes that slow write performance
+
+1.2 Database Naming Conventions
+Element
+Convention
+Example
+Table names
+PascalCase (Prisma model names)
+User, Challenge, Trade
+Column names
+camelCase
+userId, challengeId, createdAt
+Enum names
+PascalCase
+Role, ChallengeStatus, PaymentStatus
+Enum values
+UPPER_SNAKE_CASE
+TRADER, SUPER_ADMIN, PASSED, FAILED
+Foreign key columns
+{tableName}Id
+userId, challengeId, planId
+Boolean columns
+Positive assertion
+isActive (not inactive), aadhaarVerified (not aadhaarUnverified)
+Timestamp columns
+{action}At
+createdAt, updatedAt, passedAt, processedAt
+Index names
+idx_{table}_{column}
+idx_user_email, idx_challenge_status
+2. Complete Entity Relationship
+2.1 Entity Summary
+Entity
+Records (Year 1)
+Records (Year 3)
+Growth Driver
+Critical Operations
+User
+10,000
+1,00,000
+New registrations
+Login (high freq), KYC update, profile fetch
+Plan
+5
+5-10
+Admin adds new plans
+Fetch all plans (cached), purchase validation
+Challenge
+15,000
+1,50,000
+Challenge purchases
+Create on payment, update on every trade
+Trade
+5,00,000
+50,00,000
+Real-time trade sync
+Insert on webhook, query for P&L calculation
+Payment
+15,000
+1,50,000
+Same as challenges
+Create on order, update on webhook
+Payout
+2,000
+20,000
+Funded trader withdrawals
+Create on request, update on admin action
+Device
+20,000
+2,00,000
+Multiple device logins
+Create on new device, check on login
+Notification
+1,00,000
+10,00,000
+All platform events
+Create on event, mark read on view
+
+2.2 Relationship Map
+From
+Relationship
+To
+Constraint
+Cascade
+User
+One to Many
+Challenge
+userId FK in Challenge
+Delete User → restrict (has challenges)
+User
+One to Many
+Payment
+userId FK in Payment
+Delete User → restrict (has payments)
+User
+One to Many
+Payout
+userId FK in Payout
+Delete User → restrict (has payouts)
+User
+One to Many
+Device
+userId FK in Device
+Delete User → cascade delete devices
+User
+One to Many
+Notification
+userId FK in Notification
+Delete User → cascade delete notifications
+User
+Self-referential
+User (referredBy)
+referredBy FK → User.id
+Delete referrer → set referredBy NULL
+Plan
+One to Many
+Challenge
+planId FK in Challenge
+Delete Plan → restrict (has challenges)
+Challenge
+One to Many
+Trade
+challengeId FK in Trade
+Delete Challenge → restrict (has trades)
+Challenge
+One to Many
+Payout
+challengeId FK in Payout
+Delete Challenge → restrict (has payouts)
+3. Complete Data Dictionary — All Tables
+3.1 User Table
+Central entity for all platform users — both traders and admin accounts. Differentiated by the role enum. All sensitive fields are encrypted at the application layer before storage.
+
+Column
+Data Type
+Nullable
+Unique
+Default
+Constraints
+Description
+id
+UUID
+No
+Yes (PK)
+uuid_generate_v4()
+PRIMARY KEY
+Unique user identifier — used in all FK references
+fullName
+VARCHAR(100)
+No
+No
+-
+NOT NULL
+Legal full name — locked after Aadhaar verification
+email
+VARCHAR(255)
+No
+Yes
+—
+NOT NULL, UNIQUE
+Primary login identifier — verified on registration, never changeable
+phone
+VARCHAR(15)
+No
+Yes
+—
+NOT NULL, UNIQUE
+10-digit Indian mobile — OTP verified, changeable with re-verification
+passwordHash
+VARCHAR(255)
+No
+No
+—
+NOT NULL
+bcrypt hash cost 12 — never stored as plaintext, never returned in API
+role
+ENUM(Role)
+No
+No
+TRADER
+NOT NULL
+TRADER | ADMIN | SUPER_ADMIN — controls all access permissions
+kycStatus
+ENUM(KycStatus)
+No
+No
+PENDING
+NOT NULL
+PENDING | VERIFIED | REJECTED — KYC completion state
+aadhaarVerified
+BOOLEAN
+No
+No
+false
+NOT NULL
+true after successful UIDAI OTP verification — triggers name lock
+panNumber
+VARCHAR(10)
+Yes
+No
+NULL
+NULLABLE
+PAN card number — required for payouts above Rs. 50,000 (PMLA)
+bankAccount
+VARCHAR(100)
+Yes
+No
+NULL
+NULLABLE, ENCRYPTED
+Bank account number — AES-256 encrypted — verified before first payout
+bankIfsc
+VARCHAR(11)
+Yes
+No
+NULL
+NULLABLE
+IFSC code — validated against RBI IFSC master list
+bankName
+VARCHAR(100)
+Yes
+No
+NULL
+NULLABLE
+Bank name — fetched via IFSC lookup API
+referralCode
+VARCHAR(10)
+No
+Yes
+Auto-generated
+NOT NULL, UNIQUE
+INDI + 6 alphanumeric chars — generated on registration, permanent
+referredBy
+UUID
+Yes
+No
+NULL
+FK(User.id), NULLABLE
+ID of user who referred this trader — set once, never updatable
+walletBalance
+BIGINT
+No
+No
+0
+NOT NULL, >= 0
+Referral earnings in paise — redeemable at checkout only, not withdrawable
+isActive
+BOOLEAN
+No
+No
+true
+NOT NULL
+false = account suspended — blocks login and all protected operations
+emailVerified
+BOOLEAN
+No
+No
+false
+NOT NULL
+true after email link clicked — required before first login
+phoneVerified
+BOOLEAN
+No
+No
+false
+NOT NULL
+true after OTP verified — required before challenge purchase
+twoFactorEnabled
+BOOLEAN
+No
+No
+false
+NOT NULL
+true if trader has enabled 2FA — always true for ADMIN role
+loginAttempts
+INTEGER
+No
+No
+0
+NOT NULL, >= 0
+Failed login count — resets on successful login, locks at 5
+lockUntil
+TIMESTAMP
+Yes
+No
+NULL
+NULLABLE
+Account unlock timestamp — set on 5 failed attempts (15 min lock)
+lastLoginAt
+TIMESTAMP
+Yes
+No
+NULL
+NULLABLE
+Timestamp of last successful login — used for security monitoring
+lastLoginIp
+VARCHAR(45)
+Yes
+No
+NULL
+NULLABLE
+IP address of last login — stored for audit purposes
+createdAt
+TIMESTAMP
+No
+No
+NOW()
+NOT NULL
+Account creation timestamp — immutable
+updatedAt
+TIMESTAMP
+No
+No
+NOW()
+NOT NULL
+Auto-updated by Prisma on any profile change
+
+3.1.1 User Table — Prisma Schema
+model User {
+  id              String    @id @default(uuid())
+  fullName        String
+  email           String    @unique
+  phone           String    @unique
+  passwordHash    String
+  role            Role      @default(TRADER)
+  kycStatus       KycStatus @default(PENDING)
+  aadhaarVerified Boolean   @default(false)
+  panNumber       String?
+  bankAccount     String?   // AES-256 encrypted before storage
+  bankIfsc        String?
+  bankName        String?
+  referralCode    String    @unique
+  referredBy      String?
+  walletBalance   BigInt    @default(0)
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  phoneVerified   Boolean   @default(false)
+  twoFactorEnabled Boolean  @default(false)
+  loginAttempts   Int       @default(0)
+  lockUntil       DateTime?
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  challenges  Challenge[]
+  payments    Payment[]
+  payouts     Payout[]
+  devices     Device[]
+  notifications Notification[]
+}
+3.2 Plan Table
+Static reference table containing the 5 challenge plan definitions. Extremely low write frequency — only updated by Super Admin. All amounts in paise. Percentages stored as Float for calculation precision.
+
+Column
+Data Type
+Nullable
+Default
+Description
+Example Value
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+550e8400-e29b-41d4-a716-446655440000
+name
+VARCHAR(50)
+No
+—
+Display name shown on pricing page
+Pro
+accountSize
+BIGINT
+No
+—
+Virtual account size in paise
+100000000 (= Rs. 10,00,000)
+challengeFee
+BIGINT
+No
+—
+Challenge fee in paise — exclusive of GST
+329900 (= Rs. 3,299)
+profitTarget
+FLOAT
+No
+—
+Profit target as decimal percentage
+8.0 (= 8%)
+dailyLossLimit
+FLOAT
+No
+—
+Daily loss limit as decimal percentage
+4.0 (= 4%)
+maxDrawdown
+FLOAT
+No
+—
+Maximum drawdown as decimal percentage
+8.0 (= 8%)
+minTradingDays
+INTEGER
+No
+—
+Minimum days trader must place at least one trade
+5
+maxTradingDays
+INTEGER
+No
+—
+Days before challenge auto-expires
+45
+profitSplitPct
+FLOAT
+No
+80.0
+Trader's initial profit split percentage
+80.0 (= 80%)
+isActive
+BOOLEAN
+No
+true
+False = plan hidden from pricing page
+true
+sortOrder
+INTEGER
+No
+0
+Display order on pricing page (ascending)
+3
+createdAt
+TIMESTAMP
+No
+NOW()
+Plan creation timestamp
+2026-03-01T00:00:00Z
+updatedAt
+TIMESTAMP
+No
+NOW()
+Last plan update timestamp
+2026-03-01T00:00:00Z
+
+3.2.1 Seed Data — 5 Plans
+Plan Name
+Account Size
+Fee
+Profit Target Amt
+Daily Loss Amt
+Max Drawdown Amt
+Seed
+Rs. 2,50,000 (25000000p)
+Rs. 999 (99900p)
+Rs. 20,000
+Rs. 1,000/day
+Rs. 20,000
+Starter
+Rs. 5,00,000 (50000000p)
+Rs. 1,799 (179900p)
+Rs. 40,000
+Rs. 2,000/day
+Rs. 40,000
+Pro
+Rs. 10,00,000 (100000000p)
+Rs. 3,299 (329900p)
+Rs. 80,000
+Rs. 4,000/day
+Rs. 80,000
+Elite
+Rs. 15,00,000 (150000000p)
+Rs. 4,799 (479900p)
+Rs. 1,20,000
+Rs. 6,000/day
+Rs. 1,20,000
+Master
+Rs. 20,00,000 (200000000p)
+Rs. 5,999 (599900p)
+Rs. 1,60,000
+Rs. 8,000/day
+Rs. 1,60,000
+
+Note: 'p' = paise. All values stored as integers. To convert to rupees: divide by 100.
+3.3 Challenge Table
+Core transactional table. One record created per challenge purchase. Updated by the Risk Management Engine on every trade event. Status transitions are one-way: ACTIVE can move to PASSED, FAILED, or EXPIRED — no reversal.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key — used in all API routes
+userId
+UUID FK
+No
+—
+References User.id — the trader who owns this challenge
+planId
+UUID FK
+No
+—
+References Plan.id — plan selected at purchase time
+accountSize
+BIGINT
+No
+—
+Copied from Plan.accountSize at creation — immutable after creation
+currentBalance
+BIGINT
+No
+= accountSize
+Current balance in paise — updated after each trade by Risk Engine
+peakBalance
+BIGINT
+No
+= accountSize
+Highest balance ever reached — used for drawdown calculation — only ever increases
+totalPnl
+BIGINT
+No
+0
+Cumulative realized P&L since challenge start — can be negative
+dailyPnl
+BIGINT
+No
+0
+Today's P&L — reset to 0 at 9:15 AM IST each trading day by cron job
+daysTraded
+INTEGER
+No
+0
+Count of distinct calendar dates on which >= 1 trade was executed
+status
+ENUM(ChallengeStatus)
+No
+ACTIVE
+ACTIVE | PASSED | FAILED | EXPIRED — only RME and cron can change this
+failReason
+VARCHAR(200)
+Yes
+NULL
+Human-readable failure reason — sent in failure notification email
+startDate
+DATE
+No
+—
+Challenge start date — set to payment confirmation date
+expiryDate
+DATE
+No
+—
+= startDate + 45 days — challenge auto-expires if not passed by this date
+passedAt
+TIMESTAMP
+Yes
+NULL
+Exact timestamp when all pass conditions were simultaneously met
+failedAt
+TIMESTAMP
+Yes
+NULL
+Exact timestamp when failure rule was breached
+brokerConnected
+BOOLEAN
+No
+false
+true after trader completes broker OAuth connection
+brokerType
+VARCHAR(20)
+Yes
+NULL
+'upstox' or 'zerodha' — which broker is connected
+brokerAccountId
+VARCHAR(100)
+Yes
+NULL
+Encrypted broker account identifier for API calls
+lastSyncAt
+TIMESTAMP
+Yes
+NULL
+Last successful trade sync from broker — used for staleness detection
+consistencyViolations
+INTEGER
+No
+0
+Count of consistency rule violations — disqualification at 3
+profitSplitPct
+FLOAT
+No
+80.0
+Trader profit split — starts 80%, increases with scaling
+isFunded
+BOOLEAN
+No
+false
+true for funded accounts (created after passing) — different display
+parentChallengeId
+UUID
+Yes
+NULL
+For funded accounts — points to the challenge that was passed
+createdAt
+TIMESTAMP
+No
+NOW()
+Exact timestamp of payment confirmation — challenge activation time
+updatedAt
+TIMESTAMP
+No
+NOW()
+Last Risk Engine update timestamp — shows how current the data is
+
+3.3.1 Challenge Status State Machine
+From Status
+To Status
+Trigger
+Reversible?
+(new)
+ACTIVE
+Payment confirmed — Razorpay webhook received
+No
+ACTIVE
+PASSED
+Profit target + min days + all rules complied — evaluated at 3:31 PM IST
+No
+ACTIVE
+FAILED
+Daily loss limit (3rd violation) OR max drawdown breached permanently
+No
+ACTIVE
+EXPIRED
+expiryDate passed — midnight cron job
+No
+ACTIVE
+SUSPENDED
+Daily loss limit hit — temporary
+Yes — auto-reinstates at 9:15 AM
+SUSPENDED
+ACTIVE
+9:15 AM IST cron — new trading day starts
+Automatic
+3.4 Trade Table
+High-volume, append-only table. Stores every individual trade execution synced from broker APIs. No updates after initial insert — trade records are immutable. The brokerTradeId unique constraint is the critical deduplication mechanism preventing duplicate ingestion from webhook retries.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+challengeId
+UUID FK
+No
+—
+References Challenge.id — denormalized for fast risk engine lookups
+userId
+UUID FK
+No
+—
+References User.id — denormalized to avoid JOIN in high-frequency queries
+instrument
+VARCHAR(50)
+No
+—
+NSE trading symbol — e.g., NIFTY50-CE-22000-2026-03-28, RELIANCE, BANKNIFTY-FUT
+instrumentType
+VARCHAR(20)
+No
+—
+EQUITY | FUTURES | OPTIONS | INDEX — for analytics and restriction checks
+tradeType
+ENUM(TradeType)
+No
+—
+BUY | SELL
+quantity
+INTEGER
+No
+—
+Number of shares or lots — must be positive integer
+entryPrice
+BIGINT
+No
+—
+Entry price in paise — actual execution price from broker
+exitPrice
+BIGINT
+Yes
+NULL
+Exit price in paise — NULL if position is still open (intraday)
+pnl
+BIGINT
+No
+0
+Realized P&L in paise — 0 if position still open — updated on exit
+tradeDate
+DATE
+No
+—
+Calendar date of trade — used for daysTraded counting and daily P&L grouping
+entryTime
+TIMESTAMP
+No
+—
+Exact entry execution timestamp from broker — validated against market hours
+exitTime
+TIMESTAMP
+Yes
+NULL
+Exact exit execution timestamp — NULL if position still open
+brokerTradeId
+VARCHAR(100)
+No
+—
+UNIQUE — Broker's reference ID (e.g., Upstox order ID) — prevents duplicate ingestion
+brokerOrderId
+VARCHAR(100)
+Yes
+NULL
+Broker's order ID — may differ from trade ID for partial fills
+exchange
+VARCHAR(10)
+No
+—
+NSE | BSE — which exchange the trade was executed on
+segment
+VARCHAR(10)
+No
+—
+EQ | FO — equity or futures and options segment
+isOpen
+BOOLEAN
+No
+true
+false after position closed and exit price set
+notes
+VARCHAR(200)
+Yes
+NULL
+Admin notes for flagged/suspicious trades
+isFlagged
+BOOLEAN
+No
+false
+true if trade flagged for review (e.g., outside market hours)
+createdAt
+TIMESTAMP
+No
+NOW()
+Record creation — when webhook was processed, not trade time
+
+3.4.1 Trade Volume Projections
+Period
+Active Challenges
+Trades per Challenge/Day
+Total Daily Trades
+Monthly Trades
+Storage (KB/record)
+Month 1
+50
+15 avg
+750
+~16,500
+~2 KB
+Month 3
+150
+15 avg
+2,250
+~49,500
+~2 KB
+Month 6
+500
+15 avg
+7,500
+~1,65,000
+~2 KB
+Month 12
+1,000
+15 avg
+15,000
+~3,30,000
+~2 KB
+Year 3
+5,000
+15 avg
+75,000
+~16,50,000
+~2 KB
+
+At Year 3 volume, Trade table will have ~50 million records occupying ~100 GB. Cold storage archival recommended for trades older than 2 years. Partition by tradeDate month recommended at Year 2.
+3.5 Payment Table
+Append-only financial audit table. Created when Razorpay order is created. Status updated via webhook. Never hard-deleted — all payment records retained for 8 years per GST and IT Act requirements.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+userId
+UUID FK
+No
+—
+References User.id — who made the payment
+challengeId
+UUID
+Yes
+NULL
+References Challenge.id — set after challenge created on successful payment
+planId
+UUID FK
+No
+—
+References Plan.id — which plan was purchased
+amount
+BIGINT
+No
+—
+Total amount paid in paise including GST
+baseAmount
+BIGINT
+No
+—
+Challenge fee before GST in paise
+gstAmount
+BIGINT
+No
+—
+18% GST component in paise — baseAmount * 0.18
+gstInvoiceNo
+VARCHAR(50)
+Yes
+NULL
+GST invoice number — generated on payment success
+razorpayOrderId
+VARCHAR(100)
+Yes
+NULL
+Razorpay order ID — created before payment, used for verification
+razorpayPaymentId
+VARCHAR(100)
+Yes
+NULL
+Razorpay payment ID — received after successful payment
+razorpaySignature
+VARCHAR(200)
+Yes
+NULL
+HMAC signature — verified to confirm webhook authenticity
+status
+ENUM(PaymentStatus)
+No
+PENDING
+PENDING | SUCCESS | FAILED | REFUNDED
+paymentMethod
+VARCHAR(50)
+Yes
+NULL
+UPI | NETBANKING | CARD | WALLET — from Razorpay response
+failureReason
+VARCHAR(200)
+Yes
+NULL
+Razorpay failure reason if payment failed
+refundId
+VARCHAR(100)
+Yes
+NULL
+Razorpay refund ID if refund was processed
+refundedAt
+TIMESTAMP
+Yes
+NULL
+Timestamp when refund was processed
+ipAddress
+VARCHAR(45)
+Yes
+NULL
+IP address at payment time — fraud detection
+createdAt
+TIMESTAMP
+No
+NOW()
+Order creation timestamp — before payment
+paidAt
+TIMESTAMP
+Yes
+NULL
+Payment confirmation timestamp — webhook received
+3.6 Payout Table
+Financial audit table for all withdrawal requests and transfers. Append-only after creation. Admin approves/rejects via status update. All payout amounts stored pre-TDS and post-TDS for audit transparency.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+userId
+UUID FK
+No
+—
+References User.id — trader requesting payout
+challengeId
+UUID FK
+No
+—
+References Challenge.id — must be PASSED/funded challenge
+amountRequested
+BIGINT
+No
+—
+Amount trader requested in paise
+grossProfit
+BIGINT
+No
+—
+Gross profit from challenge in paise before any deductions
+traderSharePct
+FLOAT
+No
+—
+Trader profit split at time of payout (80%, 85%, or 90%)
+traderShareAmount
+BIGINT
+No
+—
+Trader's share of gross profit = grossProfit * traderSharePct / 100
+challengeFeeRefund
+BIGINT
+No
+0
+Challenge fee refunded with first payout only — in paise
+tdsPercentage
+FLOAT
+No
+30.0
+TDS rate applied — 30% for winnings above threshold
+tdsAmount
+BIGINT
+No
+—
+TDS deducted = traderShareAmount * tdsPercentage / 100
+netPayoutAmount
+BIGINT
+No
+—
+Final amount transferred = traderShareAmount + feeRefund - tdsAmount
+status
+ENUM(PayoutStatus)
+No
+PENDING
+PENDING | APPROVED | REJECTED | PROCESSING | TRANSFERRED | FAILED
+adminId
+UUID
+Yes
+NULL
+References User.id of admin who processed — for audit trail
+adminNotes
+VARCHAR(500)
+Yes
+NULL
+Admin notes on approval or rejection reason
+razorpayPayoutId
+VARCHAR(100)
+Yes
+NULL
+Razorpay Payout API reference ID
+utrNumber
+VARCHAR(50)
+Yes
+NULL
+UTR/NEFT reference number from bank — shared with trader
+bankAccountLast4
+VARCHAR(4)
+No
+—
+Last 4 digits of bank account — shown in confirmation
+isFirstPayout
+BOOLEAN
+No
+false
+true = challenge fee refund included in this payout
+requestedAt
+TIMESTAMP
+No
+NOW()
+When trader submitted request
+processedAt
+TIMESTAMP
+Yes
+NULL
+When admin approved/rejected
+transferredAt
+TIMESTAMP
+Yes
+NULL
+When Razorpay confirmed bank transfer
+3.7 Device Table (Phase 2 — Security Enhancement)
+Tracks trusted devices for 2FA bypass. Created when a trader successfully completes OTP verification on a new device. Used for device fingerprinting and suspicious login detection.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+userId
+UUID FK
+No
+—
+References User.id
+fingerprint
+VARCHAR(200)
+No
+—
+SHA-256 hash of browser/device fingerprint (UA + screen + platform)
+deviceName
+VARCHAR(100)
+Yes
+NULL
+Human-readable device name — e.g., 'Chrome on Windows'
+ipAddress
+VARCHAR(45)
+No
+—
+IP address when device was first registered
+isTrusted
+BOOLEAN
+No
+false
+true after successful OTP verification — bypasses OTP on future logins
+lastUsedAt
+TIMESTAMP
+No
+NOW()
+Last login from this device
+lastUsedIp
+VARCHAR(45)
+Yes
+NULL
+IP from last login — detect if IP changed significantly
+createdAt
+TIMESTAMP
+No
+NOW()
+When device was first registered
+
+3.8 Notification Table
+Stores all in-app notifications for each user. Created by the notification service on any significant platform event. Read status tracked per notification.
+
+Column
+Data Type
+Nullable
+Default
+Description
+id
+UUID
+No
+uuid_generate_v4()
+Primary key
+userId
+UUID FK
+No
+—
+References User.id — who receives the notification
+type
+VARCHAR(50)
+No
+—
+CHALLENGE_PASS | CHALLENGE_FAIL | PAYOUT_APPROVED | DRAWDOWN_WARNING etc.
+title
+VARCHAR(100)
+No
+—
+Short notification title — shown in notification bell
+message
+VARCHAR(500)
+No
+—
+Full notification message body
+isRead
+BOOLEAN
+No
+false
+false = unread — shown as badge on notification bell
+readAt
+TIMESTAMP
+Yes
+NULL
+When notification was marked as read
+actionUrl
+VARCHAR(200)
+Yes
+NULL
+URL to navigate on click — e.g., /challenge/:id
+metadata
+JSON
+Yes
+NULL
+Additional context — challengeId, amount, etc.
+createdAt
+TIMESTAMP
+No
+NOW()
+Notification creation timestamp
+4. Complete Enum Definitions
+Enum
+Values
+Usage
+Notes
+Role
+TRADER, ADMIN, SUPER_ADMIN
+User.role
+TRADER = default. ADMIN set by SUPER_ADMIN only. SUPER_ADMIN = founding team only.
+KycStatus
+PENDING, VERIFIED, REJECTED
+User.kycStatus
+PENDING = default. VERIFIED after Aadhaar OTP + bank. REJECTED = admin manual rejection.
+ChallengeStatus
+ACTIVE, PASSED, FAILED, EXPIRED, SUSPENDED
+Challenge.status
+ACTIVE = default. SUSPENDED = temporary daily loss. Others = permanent terminal states.
+TradeType
+BUY, SELL
+Trade.tradeType
+Directly from broker API — BUY for entry, SELL for exit (for long positions)
+PaymentStatus
+PENDING, SUCCESS, FAILED, REFUNDED
+Payment.status
+PENDING = order created. SUCCESS = webhook confirmed. FAILED = payment declined. REFUNDED = fee returned.
+PayoutStatus
+PENDING, APPROVED, REJECTED, PROCESSING, TRANSFERRED, FAILED
+Payout.status
+PENDING = submitted. APPROVED = admin approved. PROCESSING = Razorpay initiated. TRANSFERRED = UTR received.
+5. Database Indexes — Complete Specification
+Index Name
+Table
+Column(s)
+Type
+Justification
+Query Pattern
+idx_user_email
+User
+email
+UNIQUE BTREE
+Every login lookup — very high frequency
+WHERE email = ?
+idx_user_phone
+User
+phone
+UNIQUE BTREE
+Phone OTP verification, duplicate check
+WHERE phone = ?
+idx_user_referral
+User
+referralCode
+UNIQUE BTREE
+Referral code validation at registration
+WHERE referralCode = ?
+idx_user_active
+User
+isActive
+BTREE
+Filter suspended accounts — login check
+WHERE isActive = true
+idx_challenge_user
+Challenge
+userId
+BTREE
+Load all trader challenges — dashboard
+WHERE userId = ?
+idx_challenge_user_status
+Challenge
+userId, status
+COMPOSITE BTREE
+Active challenge for RME lookup
+WHERE userId = ? AND status = ACTIVE
+idx_challenge_status
+Challenge
+status
+BTREE
+Admin active challenges monitor
+WHERE status = ACTIVE
+idx_challenge_expiry
+Challenge
+expiryDate
+BTREE
+Daily expiry cron job
+WHERE expiryDate <= NOW() AND status = ACTIVE
+idx_trade_challenge
+Trade
+challengeId
+BTREE
+Load challenge trade history
+WHERE challengeId = ?
+idx_trade_user
+Trade
+userId
+BTREE
+Cross-challenge analytics
+WHERE userId = ?
+idx_trade_date
+Trade
+tradeDate
+BTREE
+Daily P&L calculation
+WHERE tradeDate = TODAY
+idx_trade_challenge_date
+Trade
+challengeId, tradeDate
+COMPOSITE BTREE
+Daily P&L for specific challenge — Risk Engine
+WHERE challengeId = ? AND tradeDate = ?
+idx_trade_broker
+Trade
+brokerTradeId
+UNIQUE BTREE
+Duplicate ingestion prevention
+WHERE brokerTradeId = ?
+idx_payment_user
+Payment
+userId
+BTREE
+Load user payment history
+WHERE userId = ?
+idx_payment_order
+Payment
+razorpayOrderId
+BTREE
+Webhook payment verification
+WHERE razorpayOrderId = ?
+idx_payment_status
+Payment
+status
+BTREE
+Admin payment reconciliation
+WHERE status = PENDING
+idx_payout_user
+Payout
+userId
+BTREE
+Load user payout history
+WHERE userId = ?
+idx_payout_status
+Payout
+status
+BTREE
+Admin payout queue
+WHERE status = PENDING
+idx_payout_challenge
+Payout
+challengeId
+BTREE
+Check existing payouts for challenge
+WHERE challengeId = ?
+idx_notification_user
+Notification
+userId, isRead
+COMPOSITE BTREE
+Unread notification count — very frequent
+WHERE userId = ? AND isRead = false
+idx_device_user
+Device
+userId
+BTREE
+Load user's trusted devices
+WHERE userId = ?
+idx_device_fingerprint
+Device
+userId, fingerprint
+COMPOSITE BTREE
+Device recognition on login
+WHERE userId = ? AND fingerprint = ?
+6. Database Migration Strategy
+6.1 Migration Approach
+Prisma Migrate is used for all schema changes. Every migration creates a timestamped .sql file in the prisma/migrations directory. Migrations are version-controlled in Git alongside application code.
+
+Migration Type
+Command
+When to Use
+Risk Level
+Dev migration
+npx prisma migrate dev --name description
+Development — adds to migration history
+Low — rolls back on failure
+Production deploy
+npx prisma migrate deploy
+CI/CD pipeline — applies pending migrations
+Medium — test on staging first
+Schema reset (dev only)
+npx prisma migrate reset
+Development only — wipe and recreate
+High — NEVER on production
+Schema push (prototyping)
+npx prisma db push
+Rapid prototyping — does not create migration file
+Low — dev only
+Baseline existing DB
+npx prisma migrate resolve --applied
+When DB exists but no migration history
+Medium — one-time operation
+
+6.2 Safe Migration Rules
+NEVER rename a column directly — add new column, migrate data, then drop old column
+NEVER change column data type directly in production — add new column with new type, backfill, then swap
+ALWAYS run migrations on staging environment and verify for at least 24 hours before production
+ALWAYS take manual database backup before running production migrations
+NEVER delete a column unless it has been marked as deprecated for at least 1 sprint
+ALWAYS use --name flag with descriptive migration names — e.g., add_device_fingerprint_table
+NEVER include data migrations (UPDATE/INSERT) in schema migration files — use separate seed scripts
+7. Data Retention & Compliance Policy
+Data Type
+Retention Period
+Storage Location
+Archive Strategy
+Legal Basis
+User account data
+7 years after account closure
+PostgreSQL (active) + encrypted S3 backup (archived)
+Export to S3 on closure, delete from DB after 7 years
+IT Act 2000, Companies Act
+KYC documents (PAN, cheque)
+7 years from document submission
+AWS S3 private encrypted bucket
+Never deleted within retention period
+PMLA 2002, UIDAI guidelines
+Payment records
+8 years from transaction
+PostgreSQL append-only
+Partitioned by year, archive to S3 cold storage
+GST Act 2017, Income Tax Act
+Payout records + TDS
+8 years from payout
+PostgreSQL append-only
+Same as payments
+Income Tax Act (TDS records)
+Trade history
+5 years from trade date
+PostgreSQL (2 years active) + S3 cold storage (3 years)
+Partition by month, archive after 2 years
+SEBI regulations
+Admin audit logs
+3 years
+Separate audit_log table
+Quarterly export to S3, auto-delete after 3 years
+IT Act, Companies Act
+Session tokens (Redis)
+30 days maximum (TTL)
+Redis with TTL — auto-expire
+No archiving needed
+Security best practice
+OTP codes (Redis)
+10 minutes maximum (TTL)
+Redis with TTL — auto-expire
+No archiving needed
+Security best practice
+Error logs (Sentry)
+90 days on Sentry
+Sentry cloud storage
+Auto-purge after 90 days
+Business operations
+Email logs (SendGrid)
+30 days activity log
+SendGrid cloud
+Auto-purge after 30 days
+Business operations
+8. Database Performance Benchmarks
+Query
+Description
+Target P50
+Target P95
+Target P99
+Measurement
+User login
+Find user by email + compare hash
+5ms
+20ms
+50ms
+SELECT by unique index
+Load dashboard
+Challenge + recent 20 trades + rules
+50ms
+100ms
+200ms
+JOIN + index scan
+Risk Engine evaluate
+Load challenge from cache/DB, evaluate rules
+2ms (cache)
+10ms (DB)
+20ms
+Redis O(1) + conditional DB
+Insert trade
+Write new trade record to DB
+10ms
+30ms
+50ms
+Single row insert
+Update challenge
+Update balance, P&L, peak (Risk Engine)
+15ms
+40ms
+80ms
+Single row update by PK
+Load trade history
+Paginated 20 trades for challenge
+20ms
+60ms
+100ms
+Index scan + pagination
+Leaderboard query
+Aggregate top 50 funded traders
+500ms uncached
+N/A
+N/A
+Cached in Redis — DB query once daily
+Admin trader list
+Paginated 50 traders with status filters
+30ms
+80ms
+150ms
+Index scan + pagination
+Analytics revenue
+Sum payments by date range
+100ms
+300ms
+500ms
+Aggregate on indexed status column
+INDIPIPS PRIVATE LIMITED  |  Database Design Document (DDD)  |  INDI-DDD-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited. Unauthorized reproduction prohibited.
+--- END OF Indipips_DDD_FULL_v1.0.docx ---
+
+--- START OF Indipips_SAD_FULL_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+SYSTEM ARCHITECTURE DOCUMENT
+
+Complete Technical Architecture, Infrastructure & Design Decisions
+Document Code: INDI-SAD-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY — NOT FOR DISTRIBUTION
+Field
+Details
+Document Code
+INDI-SAD-001
+Version
+1.0 — Initial Release
+Status
+Final — Approved
+Prepared By
+Indipips Founding Team
+Date
+March 2026
+Classification
+Confidential & Proprietary
+1. Architecture Overview
+The Indipips System Architecture is designed around four core principles: reliability for financial operations, real-time responsiveness for risk monitoring, security at every layer, and horizontal scalability from 100 to 100,000 traders without architectural changes. This document defines every component, service, integration, data flow, and infrastructure decision for the Indipips platform.
+
+1.1 Architecture Style
+Indipips uses a Modular Monolith architecture for the MVP phase — a single deployable Node.js application internally organized into clearly separated service modules. This provides the development simplicity of a monolith with the logical separation of microservices, enabling easy decomposition into true microservices post-investment when traffic demands it. The frontend is a completely separate React SPA.
+
+Architecture Decision
+Choice
+Rationale
+When to Revisit
+Application Style
+Modular Monolith
+Faster development, simpler deployment, same logical separation as microservices
+When monthly traffic exceeds 50,000 active users
+Communication Style
+REST + WebSocket
+REST for CRUD operations, WebSocket for real-time dashboard updates
+When event volume requires message queue between services
+Database Strategy
+Single PostgreSQL instance
+Sufficient for MVP scale, simpler to manage and backup
+When query volume exceeds 10,000 requests/second
+Caching Strategy
+Redis for session + hot data
+Sub-millisecond cache for leaderboard, plans, rate limiting
+Already implemented from Day 1
+Job Processing
+Bull queue with Redis
+Reliable async processing for emails, SMS, certificates
+When queue depth consistently exceeds 1,000 jobs/minute
+Frontend Architecture
+React SPA
+Decoupled from backend, CDN-deployable, mobile-responsive
+When mobile app needed — React Native code sharing
+
+1.2 System Context Diagram — Textual Representation
+The following describes the complete system boundary and all external integrations:
+
+External Actor
+Direction
+Interface
+Data Exchanged
+Trader (Web Browser)
+Bidirectional
+HTTPS + WebSocket
+UI requests, real-time P&L updates, notifications
+Admin (Web Browser)
+Bidirectional
+HTTPS
+Management requests, analytics, approvals
+Upstox Broker API
+Inbound webhook + Outbound REST
+HTTPS REST + Webhook
+Trade execution events, position data, portfolio
+Zerodha Kite API
+Inbound webhook + Outbound REST
+HTTPS REST + Webhook
+Trade execution events, position data (backup broker)
+UIDAI via Digio
+Outbound REST
+HTTPS REST (TLS 1.3)
+Aadhaar OTP requests, verification responses
+Razorpay Payments
+Bidirectional
+HTTPS REST + Webhook
+Payment orders, confirmations, refunds, payouts
+SendGrid
+Outbound REST
+HTTPS REST
+Email delivery requests, templates, tracking
+MSG91
+Outbound REST
+HTTPS REST (DLT)
+OTP delivery, SMS alerts, marketing (opt-in only)
+AWS S3
+Outbound SDK
+AWS SDK v3 over HTTPS
+KYC document uploads, certificate downloads
+Cloudflare
+Inbound proxy
+DNS + TLS termination
+All inbound traffic proxied through Cloudflare WAF
+Sentry
+Outbound SDK
+HTTPS
+Error events, performance traces, release tracking
+2. Complete Technology Stack
+2.1 Frontend Stack — Full Specification
+Technology
+Version
+Package
+Purpose
+Configuration Notes
+React.js
+18.3.x
+react, react-dom
+Core UI framework
+StrictMode enabled, concurrent features
+Vite
+5.x
+vite
+Build tool + dev server
+HMR, tree shaking, code splitting
+React Router
+6.x
+react-router-dom
+Client-side routing
+Lazy loading per route
+Tailwind CSS
+3.4.x
+tailwindcss
+Utility CSS framework
+Dark mode default, custom color tokens
+Zustand
+4.x
+zustand
+Global state management
+Slices pattern, devtools middleware
+Axios
+1.x
+axios
+HTTP client for API calls
+Interceptors for auth token injection
+Socket.io Client
+4.x
+socket.io-client
+Real-time WebSocket
+Auto-reconnect, room subscriptions
+Recharts
+2.x
+recharts
+Charts and data visualization
+P&L line chart, drawdown gauge
+React Hook Form
+7.x
+react-hook-form
+Form state management
+Zod schema validation
+Zod
+3.x
+zod
+Schema validation
+Shared with backend for type safety
+date-fns
+3.x
+date-fns
+Date manipulation
+IST timezone handling
+Framer Motion
+11.x
+framer-motion
+UI animations
+Dashboard transitions, loading states
+React Hot Toast
+2.x
+react-hot-toast
+Toast notifications
+Success, error, loading states
+Lucide React
+Latest
+lucide-react
+Icon library
+Consistent icon set throughout
+Headless UI
+2.x
+@headlessui/react
+Accessible UI primitives
+Modals, dropdowns, tabs
+
+2.2 Backend Stack — Full Specification
+Technology
+Version
+Package
+Purpose
+Configuration Notes
+Node.js
+20 LTS
+Runtime
+Server runtime
+LTS for stability, non-blocking I/O
+Express.js
+4.19.x
+express
+HTTP framework
+Minimal, flexible, large middleware ecosystem
+Prisma ORM
+5.x
+prisma, @prisma/client
+Database abstraction
+Type-safe queries, auto-migrations
+Socket.io
+4.7.x
+socket.io
+WebSocket server
+Room-based broadcasting, CORS configured
+bcryptjs
+2.4.x
+bcryptjs
+Password hashing
+Cost factor 12 — ~300ms hash
+jsonwebtoken
+9.x
+jsonwebtoken
+JWT generation/verification
+RS256 algorithm in production
+Bull
+4.x
+bull
+Job queue
+Email, SMS, certificate jobs
+node-cron
+3.x
+node-cron
+Scheduled tasks
+IST timezone cron expressions
+Joi
+17.x
+joi
+Request validation
+Schema-based input validation
+Helmet
+7.x
+helmet
+HTTP security headers
+CSP, HSTS, XSS protection headers
+Morgan
+1.x
+morgan
+HTTP request logging
+Dev: combined, Prod: JSON structured
+express-rate-limit
+7.x
+express-rate-limit
+Rate limiting
+100 req/min global, 5/min auth routes
+cors
+2.x
+cors
+CORS middleware
+Whitelist: indipips.com, localhost in dev
+dotenv
+16.x
+dotenv
+Environment config
+Never commit .env to git
+uuid
+9.x
+uuid
+UUID generation
+v4 for all primary keys
+axios
+1.x
+axios
+HTTP client
+Broker API calls, webhook forwarding
+multer
+1.x
+multer
+File upload
+KYC document handling before S3 upload
+@aws-sdk/client-s3
+3.x
+@aws-sdk/client-s3
+AWS S3 SDK
+KYC + certificate storage
+@sendgrid/mail
+7.x
+@sendgrid/mail
+SendGrid email SDK
+Transactional templates
+razorpay
+2.x
+razorpay
+Razorpay Node SDK
+Payments, refunds, payouts
+puppeteer
+22.x
+puppeteer
+PDF generation
+Challenge certificate generation
+ioredis
+5.x
+ioredis
+Redis client
+Sessions, cache, Bull queue backend
+winston
+3.x
+winston
+Structured logging
+JSON logs → Sentry integration
+Sentry Node
+7.x
+@sentry/node
+Error tracking
+Error capture with context
+
+2.3 Infrastructure Stack — Full Specification
+Component
+MVP Service
+Production Service
+Cost MVP
+Cost Production
+Notes
+Frontend Hosting
+Vercel Free
+Vercel Pro / AWS CloudFront
+Rs. 0
+Rs. 2,000/month
+Auto-deploy from GitHub main
+Backend Hosting
+Railway Starter
+AWS EC2 t3.medium x2
+Rs. 2,000
+Rs. 12,000/month
+Docker container deployment
+PostgreSQL DB
+Railway / Supabase Free
+AWS RDS PostgreSQL Multi-AZ
+Rs. 0-1,500
+Rs. 8,000/month
+Daily automated backups
+Redis Cache
+Railway Redis
+AWS ElastiCache r6g.large
+Rs. 1,000
+Rs. 6,000/month
+Persistence enabled
+File Storage
+AWS S3 Standard
+AWS S3 + CloudFront
+Rs. 500
+Rs. 2,000/month
+Private bucket, signed URLs
+CDN + Security
+Cloudflare Free
+Cloudflare Pro
+Rs. 0
+Rs. 1,500/month
+WAF rules, DDoS protection
+Email
+SendGrid Free (100/day)
+SendGrid Essentials
+Rs. 0
+Rs. 1,200/month
+Dedicated IP in production
+SMS / OTP
+MSG91 Pay-per-use
+MSG91 Pay-per-use
+Rs. 1,500
+Rs. 5,000/month
+DLT registration required
+Monitoring
+Sentry Free
+Sentry Team
+Rs. 0
+Rs. 2,500/month
+Performance + error tracking
+Domain
+Namecheap
+Namecheap
+Rs. 85/month
+Rs. 85/month
+indipips.com annual
+SSL
+Cloudflare (free)
+Cloudflare (included)
+Rs. 0
+Rs. 0
+Auto-renewal
+Total
+
+
+Rs. 6,585
+Rs. 40,285
+3-5x cost increase handles 10x traffic
+3. Component Architecture — Deep Dive
+3.1 Backend Module Structure
+The backend follows a layered architecture: Routes → Controllers → Services → Repositories (Prisma). Each layer has a single responsibility. Business logic lives in Services, not Controllers.
+
+Module
+Files
+Responsibility
+Depends On
+Auth Module
+auth.controller.js, auth.routes.js, auth.service.js
+Registration, login, JWT, OTP, password reset
+User model, JWT service, OTP service
+User Module
+user.controller.js, user.routes.js, user.service.js
+Profile management, KYC flow, bank verification
+User model, UIDAI service, S3 service
+Plans Module
+plans.controller.js, plans.routes.js
+Challenge plan CRUD, seed data
+Plan model
+Challenge Module
+challenge.controller.js, challenge.routes.js, challenge.service.js
+Purchase, tracking, pass/fail evaluation
+Plan model, Challenge model, Payment service
+Trade Module
+trade.controller.js, trade.routes.js, trade.service.js
+Trade ingestion, P&L calculation, history
+Trade model, Challenge model, Risk Engine
+Risk Engine
+risk-engine.service.js, risk-rules.js
+Real-time rule evaluation, suspension trigger
+Challenge model, Trade model, Socket.io, Notification service
+Payment Module
+payment.controller.js, payment.routes.js, payment.service.js
+Razorpay order, verification, webhook handler
+Razorpay SDK, Challenge service, Notification service
+Payout Module
+payout.controller.js, payout.routes.js, payout.service.js
+Withdrawal request, admin approval, bank transfer
+Razorpay Payouts API, User model, Notification service
+Notification Module
+notification.service.js, email.templates.js, sms.templates.js
+Email + SMS + in-app notifications
+SendGrid SDK, MSG91 SDK, Bull queue
+Certificate Module
+certificate.service.js
+PDF generation, S3 upload, verification code
+Puppeteer, AWS S3 SDK, Challenge model
+Referral Module
+referral.controller.js, referral.routes.js, referral.service.js
+Code tracking, commission, wallet credits
+User model, Payment model
+Admin Module
+admin.controller.js, admin.routes.js
+Trader management, analytics, payout queue
+All models, Admin middleware
+Webhook Module
+webhooks.controller.js, webhooks.routes.js
+Razorpay + Broker webhook receivers
+Payment service, Trade service, Signature verification
+Broker Module
+broker.controller.js, broker.service.js
+API key management, connection verification
+Upstox API, Zerodha API, User model
+
+3.2 Frontend Component Architecture
+Component Category
+Components
+Shared State
+Key Props
+Layout
+AppLayout, AuthLayout, AdminLayout, Sidebar, Navbar, Footer
+Auth store (isLoggedIn, user)
+role, activePath
+Auth Pages
+LoginPage, RegisterPage, ForgotPasswordPage, OTPVerifyPage
+Auth store
+onSuccess callback
+Dashboard
+DashboardPage, AccountSummaryCard, PnLChart, DrawdownGauge, DailyLossMonitor, RulesPanel, TradesTable, ChallengeTimer
+Challenge store (challenge, realTimePnl)
+challengeId, isLive
+Challenge
+ChallengePurchasePage, PlanCard, PlanComparisonTable, CheckoutModal, PaymentStatus
+Plans store, Auth store
+planId, onPurchaseSuccess
+Payout
+PayoutPage, PayoutRequestForm, PayoutHistoryTable, BankDetailsForm
+Payout store
+challengeId, onSubmit
+KYC
+KYCPage, AadhaarVerifyForm, PANForm, BankVerifyForm, KYCStatusBadge
+User store (kycStatus)
+onVerified callback
+Profile
+ProfilePage, PersonalInfoForm, SecuritySettings, DeviceList
+User store
+onUpdate
+Referral
+ReferralPage, ReferralCodeCard, EarningsTable, ReferralLeaderboard
+Referral store
+code, earnings
+Admin
+AdminLayout, TraderTable, ChallengeMonitor, PayoutQueue, RevenueChart, RiskExposureTable
+Admin store
+Various admin props
+Shared
+Button, Input, Modal, Badge, Spinner, Toast, Table, Tabs, Card, EmptyState
+None — pure presentational
+Standard HTML + Tailwind props
+
+3.3 State Management Architecture
+Zustand Store
+State Held
+Actions
+Persisted?
+authStore
+user, accessToken, refreshToken, isLoggedIn, isLoading
+login, logout, refreshToken, updateProfile
+accessToken in localStorage (web)
+challengeStore
+activeChallenge, realTimePnl, dailyPnl, rules, trades, isLive
+fetchChallenge, updateFromSocket, resetDaily
+No — real-time only
+plansStore
+plans, selectedPlan, isLoading
+fetchPlans, selectPlan
+Plans cached in sessionStorage
+payoutStore
+payouts, pendingRequest, isLoading
+fetchPayouts, submitRequest, cancelRequest
+No
+kycStore
+kycStatus, aadhaarVerified, bankVerified, isLoading
+initAadhaar, verifyOTP, submitBank
+No
+notificationStore
+notifications, unreadCount
+addNotification, markRead, clearAll
+No — session only
+adminStore
+traders, challenges, payoutQueue, analytics, isLoading
+fetchAll, approvePayout, suspendTrader
+No
+4. Data Flow Architecture
+4.1 Challenge Purchase Data Flow
+Step
+Component
+Action
+Data Passed
+Next Step
+1
+Frontend — PlanCard
+Trader clicks Buy Challenge
+planId, traderId
+Navigate to /checkout
+2
+Frontend — CheckoutModal
+Display plan details + GST breakdown
+planId → fetch plan details
+Show payment button
+3
+Frontend — CheckoutModal
+Trader clicks Pay
+planId, amount
+POST /api/v1/challenges/purchase
+4
+Backend — Challenge Controller
+Validate trader auth + plan exists
+JWT decoded userId, planId
+Create Razorpay order
+5
+Backend — Razorpay SDK
+Create payment order
+amount (in paise), currency INR, receipt
+Return orderId to frontend
+6
+Frontend — Razorpay Checkout
+Open Razorpay modal
+orderId, amount, trader details
+Trader completes payment
+7
+Razorpay
+Process payment
+Payment method, amount
+Send webhook to /webhooks/razorpay
+8
+Backend — Webhook Controller
+Receive payment success
+razorpayPaymentId, orderId, signature
+Verify signature
+9
+Backend — Payment Service
+Verify webhook signature
+HMAC-SHA256 of payload + secret
+Create challenge in DB
+10
+Backend — Challenge Service
+Create challenge record
+userId, planId, accountSize, dates
+Activate broker connection prompt
+11
+Backend — Notification Service
+Send welcome email + SMS
+trader email, phone, challenge details
+Queue email + SMS jobs
+12
+Frontend — Dashboard
+Redirect to trader dashboard
+challengeId
+Load real-time dashboard
+
+4.2 Real-Time Trade Flow (Risk Engine)
+Step
+Source
+Action
+Latency Target
+Failure Handling
+1
+Upstox Broker
+Trade executed — webhook fired
+< 1 second
+Retry 3x with exponential backoff
+2
+Webhook Controller
+Receive POST /webhooks/upstox
+Immediate
+Log all incoming webhooks
+3
+Trade Service
+Validate payload, check for duplicates
+< 50ms
+Duplicate brokerTradeId → ignore silently
+4
+Trade Service
+Insert trade into Trade table
+< 100ms
+DB error → retry + Sentry alert
+5
+Risk Engine
+Retrieve challenge from Redis cache
+< 10ms
+Cache miss → fetch from DB
+6
+Risk Engine
+Calculate new P&L, balance, drawdown
+< 5ms
+Pure calculation — no I/O
+7
+Risk Engine
+Evaluate all 8 rules
+< 5ms
+Any rule breach triggers suspension flow
+8
+Risk Engine
+Update challenge in DB (atomic transaction)
+< 100ms
+Transaction rollback on failure
+9
+Risk Engine
+Update Redis cache with new values
+< 5ms
+Cache update failure — serve from DB
+10
+Socket.io
+Emit trade:update to trader's room
+< 10ms
+Client reconnects if disconnected
+11 (if breach)
+Risk Engine
+Trigger suspension service
+< 100ms
+Suspension logged with reason
+12 (if breach)
+Notification Service
+Queue email + SMS via Bull
+< 1 second
+Queue persists through restarts
+Total E2E
+Webhook → Dashboard update
+< 5 seconds
+SLA target
+Alert if > 10 seconds
+
+4.3 Payout Data Flow
+Step
+Actor
+Action
+Validation
+Time
+1
+Trader
+Submits payout request via dashboard
+KYC complete, bank verified, min amount, 14 days elapsed
+Immediate
+2
+Backend — Payout Service
+Creates payout record status PENDING
+All validations pass
+< 1 second
+3
+Backend — Notification
+Sends confirmation email to trader
+Email queued in Bull
+< 30 seconds
+4
+Admin — Email Alert
+Admin notified of new payout request
+Admin email + in-app badge
+< 1 minute
+5
+Admin
+Reviews payout in admin dashboard
+Verify KYC, challenge status, amount
+1-3 business days
+6
+Admin
+Approves payout — clicks Approve button
+Manual review complete
+Admin action
+7
+Backend — Payout Service
+Calculate TDS, profit split, fee refund
+TDS = 30% of profit, split = 80/20
+< 1 second
+8
+Backend — Razorpay Payouts API
+Initiate NEFT/IMPS transfer
+Bank details from verified profile
+< 10 seconds
+9
+Razorpay
+Process bank transfer
+Routing through NEFT/IMPS network
+30 minutes - 2 hours
+10
+Backend — Webhook
+Razorpay payout webhook received
+Transfer success confirmed
+On completion
+11
+Backend — Notification
+Email + SMS to trader with reference
+Transfer details, UTR number
+< 1 minute
+12
+Frontend — Payout History
+Status updates to TRANSFERRED
+Real-time via Socket.io
+Immediate
+5. Security Architecture — Complete Specification
+5.1 Network Security
+Layer
+Control
+Implementation
+Monitoring
+DNS
+Cloudflare DNS proxy
+All traffic routed through Cloudflare — origin IP hidden
+Cloudflare analytics
+DDoS Protection
+Cloudflare DDoS mitigation
+Automatic L3/L4/L7 attack mitigation
+Real-time attack dashboard
+WAF Rules
+Cloudflare WAF
+OWASP Core Rule Set enabled, custom rules for API patterns
+WAF event logs
+Rate Limiting (Network)
+Cloudflare Rate Limiting
+1000 req/minute per IP to all endpoints
+Cloudflare analytics
+Bot Protection
+Cloudflare Bot Management
+Known bot signatures blocked, browser integrity check
+Bot report dashboard
+IP Whitelist (Admin)
+Cloudflare Firewall Rules
+Admin subdomain blocked for all IPs except whitelisted
+Access log monitoring
+SSL/TLS
+Cloudflare SSL — Full (Strict)
+TLS 1.2 minimum, TLS 1.3 preferred, HSTS enabled
+SSL report
+Origin Protection
+Railway/AWS Security Groups
+Only Cloudflare IPs can reach origin servers
+Monthly IP list update
+
+5.2 Application Security Controls
+Control
+Implementation
+Scope
+Testing
+Authentication
+JWT RS256 tokens, bcrypt passwords, OTP 2FA
+All protected routes
+Penetration testing Week 7
+Authorization
+Role middleware (TRADER/ADMIN/SUPER_ADMIN)
+Every protected endpoint
+Authorization matrix testing
+Input Validation
+Joi schema validation on all request bodies
+All POST/PUT endpoints
+Fuzz testing on all inputs
+SQL Injection Prevention
+Prisma parameterized queries — no raw SQL
+All DB operations
+Automated SQLMap testing
+XSS Prevention
+Content-Security-Policy headers via Helmet.js
+All HTML responses
+CSP report-only then enforce
+CSRF Prevention
+SameSite cookie + custom header verification
+State-changing endpoints
+CSRF token testing
+Rate Limiting (App)
+express-rate-limit — 100 req/min global, 5/min auth
+All API endpoints
+Load testing simulation
+Webhook Security
+HMAC-SHA256 signature verification
+All incoming webhooks
+Tampered payload testing
+File Upload Security
+Whitelist mime types, max 5MB, virus scan trigger
+KYC document upload
+Malicious file upload tests
+Error Disclosure
+Generic error messages in production — details to Sentry only
+All 5xx responses
+Verify no stack traces in responses
+
+5.3 Data Security
+Data Category
+At Rest
+In Transit
+Access Control
+Retention
+User passwords
+bcrypt hash only — never plaintext
+N/A — never transmitted
+DB admin read access blocked
+Indefinite — account lifetime
+JWT secrets
+AWS Secrets Manager — never in code
+Never transmitted
+Backend process only
+Rotate quarterly
+KYC documents
+AES-256 in S3 private bucket
+TLS 1.3 + S3 transfer encryption
+Signed URL only — 15 min expiry
+7 years — PMLA requirement
+Bank account details
+Encrypted column in PostgreSQL
+TLS 1.3
+Trader (own only) + Super Admin
+7 years — IT Act requirement
+Aadhaar data
+NOT STORED — only verification status
+Never stored
+N/A
+N/A — compliance requirement
+Trade data
+Standard PostgreSQL encryption
+TLS 1.3
+Trader (own only) + Admin
+5 years — SEBI requirement
+Payment records
+Standard PostgreSQL encryption
+TLS 1.3
+Trader (own only) + Admin
+8 years — GST requirement
+API keys (broker)
+AES-256 encrypted column
+Never logged or returned in API
+Trader (own only)
+Until disconnected
+Session tokens
+Redis with TTL — auto-expiry
+TLS 1.3
+Per-user isolation
+7 days (access) / 30 days (refresh)
+6. Integration Specifications — Complete
+6.1 Upstox Paper Trading API
+Specification
+Detail
+Base URL
+https://api-hft.upstox.com/v2 (paper trading endpoint)
+Authentication
+OAuth 2.0 — Authorization Code Flow — trader connects their account
+Token Storage
+Encrypted in DB column — never logged
+Token Refresh
+Auto-refresh 30 minutes before expiry via scheduled job
+Webhook URL
+https://api.indipips.com/webhooks/upstox
+Webhook Events
+order.completed, trade.executed, position.updated
+Webhook Security
+X-Upstox-Signature header — HMAC-SHA256 verification
+Polling Fallback
+GET /portfolio/short-term-positions every 5 seconds if webhook fails
+Rate Limits
+250 requests per minute — implemented via queue
+Error Handling
+401 → re-auth prompt, 429 → exponential backoff, 5xx → retry 3x
+Data Mapping
+Upstox tradingsymbol → Indipips instrument, tradedQuantity → quantity
+Market Hours
+Only sync trades between 9:15 AM and 3:30 PM IST
+
+6.2 Razorpay Integration — Complete
+Feature
+API Endpoint
+Request Body
+Response
+Our Action
+Create Order
+POST /v1/orders
+amount (paise), currency INR, receipt, notes
+orderId, amount, status
+Store orderId, return to frontend
+Verify Payment
+POST /v1/payments/:id
+razorpaySignature header verification
+Payment details
+Create challenge, send welcome email
+Fetch Payment
+GET /v1/payments/:id
+Payment ID
+Full payment details
+Reconciliation checks
+Initiate Refund
+POST /v1/payments/:id/refund
+amount, notes
+Refund details
+Update payment record REFUNDED
+Create Payout
+POST /v1/payouts
+account_number, ifsc, amount, mode NEFT
+Payout ID, status
+Update payout record, notify trader
+Fetch Payout
+GET /v1/payouts/:id
+Payout ID
+Status, UTR number
+Update payout status, send SMS
+Payment Webhook
+POST /webhooks/razorpay (inbound)
+Event payload + signature
+200 OK
+Verify signature, process event
+Payout Webhook
+POST /webhooks/razorpay (inbound)
+Payout event + signature
+200 OK
+Update payout status, notify trader
+
+6.3 UIDAI Aadhaar eKYC via Digio
+Step
+API Call
+Data Sent
+Data Received
+Stored
+Initiate OTP
+POST /v1/aadhaar/otp
+Aadhaar number (encrypted), consent=Y
+requestId, status
+requestId in Redis (TTL 10 min)
+Verify OTP
+POST /v1/aadhaar/verify
+requestId, otp
+name, dob, gender, address masked
+Name + verification status only — NO Aadhaar stored
+Update Profile
+Internal
+name from UIDAI
+User.fullName updated
+aadhaarVerified = true, kycStatus = VERIFIED
+
+6.4 SendGrid Email Templates
+Template Name
+Template ID Variable
+Trigger
+Dynamic Variables
+Welcome Email
+SENDGRID_WELCOME_ID
+Registration complete
+fullName, email, referralCode
+OTP Verification
+SENDGRID_OTP_ID
+Registration OTP
+fullName, otp, expiry
+Challenge Purchased
+SENDGRID_CHALLENGE_ID
+Payment confirmed
+fullName, planName, accountSize, expiryDate, rules summary
+Challenge Passed
+SENDGRID_PASSED_ID
+Challenge status → PASSED
+fullName, planName, profit, certificateUrl
+Challenge Failed
+SENDGRID_FAILED_ID
+Rule breach (permanent)
+fullName, failReason, retryDiscountCode
+Daily Loss Warning
+SENDGRID_DAILY_WARN_ID
+75% of daily loss reached
+fullName, currentLoss, dailyLimit, remaining
+Drawdown Warning
+SENDGRID_DD_WARN_ID
+75% of max drawdown reached
+fullName, currentDrawdown, maxDrawdown, remaining
+Payout Approved
+SENDGRID_PAYOUT_APPROVED_ID
+Admin approves payout
+fullName, amount, tdsAmount, netAmount, bankLast4
+Payout Transferred
+SENDGRID_PAYOUT_SENT_ID
+Razorpay transfer confirmed
+fullName, amount, utrNumber, bankName
+KYC Verified
+SENDGRID_KYC_ID
+KYC status → VERIFIED
+fullName, verificationDate
+7. Deployment Architecture — Complete
+7.1 MVP Deployment Configuration
+Service
+Platform
+Configuration
+Environment Variables
+Health Check
+Frontend (React)
+Vercel
+Build: npm run build, Output: dist/
+VITE_API_URL, VITE_SOCKET_URL, VITE_RAZORPAY_KEY
+/ returns 200 OK
+Backend (Node.js)
+Railway
+Dockerfile, port 5000, 512MB RAM
+All .env variables
+GET /health returns {status: ok}
+PostgreSQL
+Railway / Supabase
+15.x, 500MB storage, daily backup
+DATABASE_URL (connection string)
+pg_isready check
+Redis
+Railway Redis
+7.x, 25MB, AOF persistence
+REDIS_URL
+PING → PONG
+Static Files
+AWS S3
+Private bucket, us-east-1, versioning enabled
+AWS_ACCESS_KEY, AWS_SECRET, S3_BUCKET
+List bucket contents
+
+7.2 CI/CD Pipeline
+Stage
+Trigger
+Actions
+Pass Condition
+On Failure
+1 — Lint
+Push to any branch
+ESLint + Prettier check
+Zero lint errors
+Block merge — notify developer
+2 — Test
+Push to any branch
+Run unit tests (Jest)
+All tests pass
+Block merge — show failing tests
+3 — Build
+Push to main
+npm run build (frontend + backend)
+Build completes without errors
+Alert developer — block deploy
+4 — Deploy Staging
+Merge to main
+Deploy to Railway staging environment
+Health check passes
+Alert team — rollback
+5 — Smoke Test
+After staging deploy
+Run critical path tests
+All smoke tests pass
+Alert team — hold production
+6 — Deploy Production
+Manual approval
+Deploy to Railway production
+Health check passes
+Auto-rollback to previous version
+7 — Monitor
+Post-deploy
+Watch Sentry for 30 minutes
+No new critical errors
+Alert team — consider rollback
+
+7.3 Disaster Recovery Plan
+Scenario
+Detection
+Response
+RTO
+RPO
+Owner
+Database corruption
+Automated health check fails
+Restore from latest S3 backup
+4 hours
+1 hour
+Tech
+Backend server crash
+Railway health check failure
+Railway auto-restart, then redeploy if needed
+15 minutes
+0 — stateless
+Tech
+Redis failure
+Bull queue stops processing
+Fall back to direct DB queries, restart Redis
+30 minutes
+Session data lost — re-login required
+Tech
+Razorpay outage
+Payment failures in monitoring
+Switch to backup gateway (PayU), notify users
+2 hours
+All pre-failure payments safe in DB
+Tech + Finance
+Broker API outage
+Webhook not received for 10+ minutes
+Switch to polling every 5 seconds, notify traders
+10 minutes
+Last successful sync — max 5 min loss
+Tech
+DDoS attack
+Cloudflare attack dashboard
+Cloudflare auto-mitigation, enable Under Attack Mode
+Immediate
+0
+Tech
+AWS S3 outage
+Certificate generation failures
+Serve cached certificates, queue new ones
+Until AWS resolves
+Certificates regenerated from DB
+Tech
+8. Performance Architecture
+8.1 Caching Strategy — Redis
+Cached Data
+Cache Key
+TTL
+Invalidation Trigger
+Cache Hit Impact
+Challenge Plans
+plans:all
+24 hours
+When admin updates/adds plan
+API response: 500ms → 5ms
+Leaderboard
+leaderboard:top50
+24 hours
+Daily cron refresh at midnight
+API response: 800ms → 8ms
+Trader challenge (active)
+challenge:{id}
+5 minutes
+On every trade update
+Risk Engine: 50ms → 5ms
+User profile
+user:{id}
+15 minutes
+On profile update
+Auth middleware: 80ms → 8ms
+Rate limit counters
+ratelimit:{ip}:{endpoint}
+1 minute sliding window
+Auto-expire
+Prevents DB count queries
+OTP codes
+otp:{phone}
+10 minutes hard TTL
+After first use (single-use)
+Prevents OTP brute force
+Refresh token blacklist
+blacklist:{tokenId}
+30 days
+On new token issued
+Prevents token reuse after logout
+Session data (admin)
+session:{userId}
+8 hours
+On logout
+Reduces JWT verify DB calls
+
+8.2 Database Query Optimization
+Query
+Current Approach
+Index Used
+Optimization Applied
+Expected Time
+Login — find user by email
+prisma.user.findUnique({where:{email}})
+idx_user_email (UNIQUE BTREE)
+Covered index — no table scan
+< 5ms
+Load trader challenges
+prisma.challenge.findMany({where:{userId}})
+idx_challenge_user (BTREE)
+Filtered by status for active only
+< 10ms
+Risk Engine — load challenge
+Redis cache → DB fallback
+Redis O(1) lookup
+5-minute TTL reduces DB hits 95%
+< 2ms (cache hit)
+Trade history (paginated)
+prisma.trade.findMany({where:{challengeId}, skip, take})
+idx_trade_challenge (BTREE)
+Cursor-based pagination for large sets
+< 20ms
+Daily P&L calculation
+SUM(pnl) WHERE tradeDate = today AND challengeId = x
+idx_trade_date + idx_trade_challenge
+Composite index candidate post-MVP
+< 15ms
+Admin — all active challenges
+prisma.challenge.findMany({where:{status:ACTIVE}})
+idx_challenge_status (BTREE)
+Paginated 50 per page
+< 30ms
+Leaderboard query
+Complex aggregation with JOIN
+idx_challenge_status + idx_challenge_user
+Cached in Redis — DB query once daily
+< 500ms (uncached)
+Payout queue — pending
+prisma.payout.findMany({where:{status:PENDING}})
+idx_payout_status (BTREE)
+Admin sees only last 30 days by default
+< 20ms
+INDIPIPS PRIVATE LIMITED  |  System Architecture Document (SAD)  |  INDI-SAD-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited. Unauthorized reproduction prohibited.
+--- END OF Indipips_SAD_FULL_v1.0.docx ---
+
+--- START OF Indipips_SPD_FULL_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+SECURITY POLICY DOCUMENT
+
+Information Security Standards, Compliance Framework & Incident Response
+Document Code: INDI-SPD-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY
+Field
+Details
+Document Code
+INDI-SPD-001
+Version
+1.0
+Status
+Final — Approved
+Prepared By
+Indipips Founding Team
+Date
+March 2026
+1. Security Philosophy
+Security at Indipips is not a checkbox — it is the foundation. Every feature, every API endpoint, every database column, and every third-party integration must be designed with security as the primary constraint, not an afterthought.
+
+Indipips handles the most sensitive category of personal data in India — financial information, government identity documents, bank account details, and real monetary transactions. A single security breach could destroy trader trust, trigger regulatory action, and end the business. Therefore, Indipips implements defense-in-depth security with a minimum of 8 independent security layers, any one of which can prevent or detect an attack even if others fail.
+
+1.1 Security Objectives
+Protect trader financial data and identity documents from unauthorized access at all times
+Ensure all monetary transactions (payments and payouts) are tamper-proof and auditable
+Prevent unauthorized access to trader accounts through strong authentication and device verification
+Detect and respond to security incidents within 4 hours of discovery
+Maintain full compliance with all applicable Indian regulations (UIDAI, PMLA, PDPB, IT Act)
+Achieve and maintain zero critical security vulnerabilities in the codebase at all times
+2. Authentication Security
+2.1 Password Security Policy
+Requirement
+Standard
+Implementation
+Testing
+Minimum length
+8 characters
+Joi validation: string().min(8)
+Boundary test: 7 chars rejected, 8 accepted
+Complexity
+Uppercase + number + special char
+Regex: /(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])/
+Test each requirement individually
+Hashing algorithm
+bcrypt
+bcrypt.hash(password, 12) — cost factor 12
+Hash timing: ~300ms — confirms correct cost
+Hash storage
+Only hash stored — never plaintext
+passwordHash column — never logged, never returned
+Verify no plain password in any log or response
+Password reset
+OTP-based via registered email/phone
+6-digit OTP, 10-minute TTL, single-use
+Test reuse: second use of same OTP rejected
+Brute force protection
+5 attempts → 15-minute lockout
+loginAttempts counter + lockUntil timestamp
+Test: 6th attempt returns 423 Locked
+Password history
+Cannot reuse last 3 passwords
+Store last 3 hashes, compare on change
+Test: previous password rejected
+Admin password
+Minimum 12 characters + mandatory 2FA
+Enhanced validation for ADMIN role
+Admin must pass 2FA check in addition
+
+2.2 JWT Token Security
+Token
+Algorithm
+Expiry
+Storage — Web
+Storage — Mobile
+Revocation
+Access Token
+HS256 (HMAC-SHA256)
+7 days
+localStorage (web) — consider HttpOnly cookie Phase 2
+SecureStore (Expo)
+Automatic on expiry; blacklist in Redis on logout
+Refresh Token
+HS256
+30 days
+HttpOnly cookie (web)
+SecureStore (Expo)
+Blacklist in Redis on logout/re-login; rotation on each use
+Admin Access Token
+HS256
+8 hours
+Browser memory only — never localStorage
+N/A
+IP check on each request; logout on tab close
+Password Reset OTP
+N/A (6-digit code)
+10 minutes
+Redis with TTL — server only
+N/A
+Single-use — deleted after first verification
+Email Verification Token
+HS256 (JWT)
+24 hours
+Email link only — never client-stored
+N/A
+Single-use — marked used in DB
+
+2.3 Two-Factor Authentication (2FA)
+Scenario
+2FA Required
+Method
+Fallback
+Admin login (always)
+Yes — mandatory
+OTP via registered mobile (MSG91)
+Email OTP if mobile fails
+New device login (trader)
+Yes — Phase 2
+OTP via registered mobile
+Email OTP
+Password reset
+Yes — always
+OTP via registered mobile
+Email OTP
+First payout request
+Yes — for amounts > Rs.10,000
+OTP via registered mobile
+None — security requirement
+Aadhaar KYC verification
+Yes — UIDAI OTP
+OTP via Aadhaar-linked mobile via UIDAI
+Cannot bypass — UIDAI requirement
+Account deletion request
+Yes — always
+OTP via registered mobile
+None — security requirement
+3. Data Security Standards
+3.1 Data Classification Matrix
+Classification
+Data Elements
+Encryption at Rest
+Encryption in Transit
+Access Permitted
+Retention
+CRITICAL
+Passwords, JWT secrets, API keys, Razorpay secrets
+Never stored — hashed/tokenized only
+Never transmitted in any form
+Backend process memory only
+Rotate secrets quarterly
+HIGHLY SENSITIVE
+PAN card, bank account number, KYC documents, Aadhaar OTP
+AES-256-GCM application-level encryption before DB write; S3 SSE-AES256
+TLS 1.3 — HTTPS enforced everywhere
+Trader (own) + Super Admin only
+7-8 years — regulatory
+SENSITIVE
+Email, phone, full name, DOB, trade data, P&L history
+PostgreSQL TDE (transparent encryption via RDS)
+TLS 1.3
+Trader (own) + Admin
+5-7 years
+INTERNAL
+Challenge status, plan data, analytics, audit logs
+Standard PostgreSQL storage + encrypted backups
+TLS 1.3
+Admin + Super Admin
+3-5 years
+PUBLIC
+Plan pricing, leaderboard (anonymized), certificate verification
+No special requirements
+HTTP or HTTPS
+Everyone
+Indefinite
+
+3.2 Encryption Implementation Details
+Data
+Algorithm
+Key Management
+Implementation
+User passwords
+bcrypt (adaptive hash, cost 12)
+No key — one-way function
+bcryptjs.hash(password, 12) on registration/password change
+Bank account numbers
+AES-256-GCM
+32-byte random key in AWS Secrets Manager
+crypto.createCipheriv('aes-256-gcm', key, iv) before DB insert
+Broker API keys/secrets
+AES-256-GCM
+Same key as bank account
+Encrypted on connect, decrypted only for API calls
+JWT tokens
+HMAC-SHA256 (HS256)
+JWT_SECRET + JWT_REFRESH_SECRET in env
+jsonwebtoken.sign() — rotate secrets quarterly
+Database at rest
+PostgreSQL TDE via AWS RDS
+AWS KMS managed keys — annual auto-rotation
+Enabled at RDS instance level — transparent to app
+S3 files (KYC docs)
+AES-256 SSE-S3
+S3 managed keys (SSE-S3) or KMS (SSE-KMS)
+aws:s3:x-amz-server-side-encryption: AES256
+Data in transit
+TLS 1.3
+Cloudflare managed — auto-renewal
+HSTS preload, minimum TLS 1.2, prefer TLS 1.3
+Redis sessions
+Redis AUTH + TLS
+REDIS_URL contains password
+ioredis TLS config with certificate verification
+4. Application Security Controls
+4.1 Input Validation & Sanitization
+Input Type
+Validation Rule
+Sanitization
+Attack Prevented
+Email
+Valid format via Joi email()
+Lowercase, trim whitespace
+Email injection, stored XSS
+Phone
+10 digits, Indian format
+Strip non-numeric except +91
+SQL injection via phone field
+Password
+Min 8 chars, complexity regex
+Never echoed back in response
+Weak password attacks
+UUID params
+Valid UUID v4 format
+Joi string().uuid()
+Path traversal, invalid DB queries
+Amount fields
+Positive number, max Rs.50L
+Convert to integer paise
+Negative amount attacks, overflow
+Free text (notes)
+Max 500 characters
+DOMPurify sanitization (frontend), escape in backend
+XSS, HTML injection
+File uploads
+Whitelist: jpg/png/pdf only, max 5MB
+MIME type verification — not just extension
+File upload attacks, code execution
+Broker API keys
+Non-empty string, max 200 chars
+Trim whitespace
+Stored XSS, injection
+Search queries
+Max 100 chars
+Parameterized — never interpolated in SQL
+SQL injection, NoSQL injection
+Pagination params
+page >= 1, limit 1-100
+parseInt with fallback defaults
+Integer overflow, DoS via huge page sizes
+
+4.2 OWASP Top 10 — Complete Mitigation
+OWASP Risk
+Mitigation — Indipips Implementation
+Testing Method
+A01:2021 — Broken Access Control
+JWT middleware on all protected routes; resource ownership check (userId === req.userId); role middleware (adminOnly); no direct object references in URLs — use UUIDs
+Authorization matrix testing; attempt to access other trader's data with own JWT — should return 403
+A02:2021 — Cryptographic Failures
+bcrypt cost 12 for passwords; AES-256-GCM for sensitive columns; TLS 1.3 everywhere; no sensitive data in URLs or logs; secrets in AWS Secrets Manager
+Verify no plaintext passwords in DB; check TLS config with ssllabs.com; grep logs for API keys
+A03:2021 — Injection
+Prisma ORM with parameterized queries — 100% of DB operations; Joi validation on all inputs; no string interpolation in queries
+SQLMap automated scan; manual injection attempts on all text inputs; Prisma raw query audit
+A04:2021 — Insecure Design
+Threat modeling conducted pre-development; principle of least privilege (DB user has only needed permissions); fail-safe defaults (deny by default)
+Architecture review; check DB user permissions; verify default behavior is deny
+A05:2021 — Security Misconfiguration
+Helmet.js for security headers (CSP, HSTS, X-Frame-Options); disable Express x-powered-by header; NODE_ENV=production disables debug; no default credentials
+Security header scan with securityheaders.com; verify debug disabled in production; check default credential removal
+A06:2021 — Vulnerable Components
+npm audit on every CI/CD run; Dependabot automated alerts; monthly manual review of all dependencies; lock file committed
+npm audit --audit-level=high fails CI; track CVEs for all packages; no abandoned packages
+A07:2021 — Auth & Session Failures
+JWT expiry (7d access, 30d refresh); refresh token rotation on each use; account lockout after 5 failed attempts; logout blacklists token in Redis
+Expired token testing; concurrent session testing; brute force simulation
+A08:2021 — Software & Data Integrity
+Razorpay webhook HMAC-SHA256 signature verification; Upstox webhook signature verification; npm package integrity via lock file; CSP prevents unauthorized script injection
+Tampered webhook payload testing; CSP violation reporting
+A09:2021 — Security Logging Failures
+All API requests logged (method, endpoint, status, duration, userId if auth); all admin actions logged with full audit trail; Sentry for error tracking; failed auth attempts logged with IP
+Verify logs contain required fields; test that failed logins are captured; Sentry alert testing
+A10:2021 — SSRF
+No user-controlled URL fetching; whitelist of allowed external domains; broker API calls use hardcoded base URLs only; no proxy functionality
+Attempt SSRF via any URL input field; verify outbound connections are whitelisted
+5. Infrastructure Security
+5.1 Network Security Controls
+Control
+Implementation
+Configuration
+Monitoring
+Cloudflare WAF
+All inbound traffic proxied through Cloudflare
+OWASP Core Rule Set + custom rules for /api and /webhooks
+WAF event log — alert on > 100 blocked requests/hour
+DDoS Protection
+Cloudflare automatic mitigation
+L3/L4/L7 protection — automatic trigger at attack threshold
+Cloudflare attack dashboard — real-time
+Rate Limiting (Cloudflare)
+1000 requests per IP per minute
+Configured in Cloudflare Rules
+Alert admin on sustained rate limit hits
+Rate Limiting (Application)
+express-rate-limit at app layer
+Global: 100/min; Auth: 5/min; Webhooks: 1000/min
+Log all rate limit hits with IP
+IP Whitelist (Admin)
+Admin subdomain restricted by IP
+Cloudflare Firewall Rule: block non-whitelisted IPs to admin.*
+Daily review of whitelist; automatic alert on non-whitelisted access attempt
+Origin Security
+Railway/AWS security groups allow only Cloudflare IP ranges
+Cloudflare IP list updated automatically via API
+Monthly verify origin not directly accessible
+SSL/TLS
+Cloudflare Full (Strict) mode
+TLS 1.2 minimum; TLS 1.3 preferred; HSTS with preload; OCSP stapling
+Monthly SSL Labs scan — maintain A+ rating
+Bot Protection
+Cloudflare Bot Management
+Challenge suspicious bots; block known malicious bots
+Bot traffic report — alert on unusual spikes
+
+5.2 Server Security
+Control
+Implementation
+Standard
+OS patches
+Railway managed updates
+Auto-patch for container base images; monthly manual check
+Least privilege DB user
+PostgreSQL user with minimal permissions
+SELECT, INSERT, UPDATE on specific tables; no DROP, CREATE, TRUNCATE
+Environment variables
+All secrets in .env or AWS Secrets Manager
+Never hardcoded; .env in .gitignore; production uses AWS Secrets Manager
+Docker security
+Non-root container user
+Dockerfile: USER node (not root); no privileged mode
+Dependency scanning
+npm audit in CI/CD pipeline
+Fail build on high/critical vulnerabilities
+SSH access
+Disabled — Railway managed
+No direct SSH to production servers
+File permissions
+Restrictive on .env and secret files
+chmod 600 on .env; chown node:node
+Process isolation
+Each service in separate container
+Frontend, backend, Redis in separate containers
+6. Compliance Framework — Complete
+6.1 Indian Regulatory Compliance
+Regulation
+Key Requirements
+Indipips Implementation
+Audit Frequency
+Penalty for Non-Compliance
+UIDAI / Aadhaar Act 2016
+No Aadhaar storage; OTP-based only; explicit consent; data minimization
+Store only verification status + masked last 4 digits; explicit consent checkbox before KYC; UIDAI authorized API provider (Digio)
+Quarterly internal audit
+Up to Rs. 1 Crore + criminal liability
+Personal Data Protection Bill (India)
+Data minimization; purpose limitation; consent management; right to deletion; data breach notification within 72 hours
+Collect only necessary data; clear privacy policy; consent flows; data deletion API (30-day process); breach notification procedure
+Annual privacy audit
+Up to Rs. 250 Crore or 2% global turnover
+Prevention of Money Laundering Act (PMLA) 2002
+KYC for high-value transactions; record retention; suspicious transaction reporting
+Mandatory PAN for payouts > Rs. 50K; 8-year record retention; STR procedure to FIU-IND
+Quarterly AML review
+Prosecution + up to Rs. 1 Lakh/day fine
+GST Act 2017
+18% GST on challenge fees; monthly GSTR filing; E-invoice for B2B
+Auto-generate GST invoices via Razorpay; CA-managed monthly GSTR filing; GST number on all invoices
+Monthly GST filing
+18% interest on unpaid GST + penalties
+Income Tax Act
+TDS on winnings; Form 16A issuance; advance tax if applicable
+30% TDS deducted from payouts; Form 16A issued quarterly; advance tax managed by CA
+Quarterly TDS filing
+234B/C interest + penalties
+IT Act 2000
+Cybersecurity standards; data retention; cyber incident reporting
+7-year data retention; AES-256 encryption; CERT-In incident reporting
+Annual security audit
+Up to Rs. 5 Crore fine + imprisonment
+Companies Act 2013
+Annual ROC filing; board minutes; statutory registers; audited financials
+CA-managed compliance; register of members; audited annual accounts
+Annual ROC filing
+Late fee Rs. 100/day + Rs. 50,000 minimum
+7. Incident Response Plan
+7.1 Incident Classification
+Severity
+Definition
+Examples
+Response Time
+Escalation
+P0 — CRITICAL
+Platform-wide outage or active data breach
+Database down, payment system fail, confirmed data breach
+15 minutes
+Immediate founder notification; consider CERT-In reporting
+P1 — HIGH
+Major feature failure affecting multiple traders
+Risk Engine down, payout system fail, authentication broken
+1 hour
+Notify tech lead and admin team
+P2 — MEDIUM
+Single feature degraded, limited trader impact
+Notification delay, leaderboard stale, broker sync slow
+4 hours
+Tech lead notification
+P3 — LOW
+Minor issues with workarounds available
+UI display bug, slow page load, cosmetic issues
+Next business day
+Log in issue tracker
+
+7.2 Data Breach Response Procedure
+Step
+Action
+Owner
+Timeline
+Documentation
+1 — Detect
+Sentry alert / trader report / admin discovery — breach identified
+Tech
+T+0
+Log discovery time, method, scope
+2 — Contain
+Isolate affected systems; block suspicious IPs; revoke compromised tokens
+Tech
+T+15 min
+Document containment actions taken
+3 — Assess
+Determine data exposed, number of users affected, breach vector
+Tech + Legal
+T+1 hour
+Write incident report draft
+4 — Notify Internal
+Notify founders and legal advisor
+Founder
+T+1 hour
+Email with incident summary
+5 — Notify Regulators
+Report to CERT-In within 6 hours; UIDAI if Aadhaar data involved
+Legal
+T+6 hours
+CERT-In incident report form
+6 — Notify Traders
+Email affected traders with: what happened, what data, what to do
+Founder + Marketing
+T+24 hours
+Email template pre-prepared
+7 — Remediate
+Fix vulnerability, patch system, restore from backup if needed
+Tech
+T+24-72 hours
+Document fix and testing
+8 — Review
+Post-incident review — root cause analysis, process improvement
+All
+T+7 days
+Post-mortem report
+
+7.3 Security Audit Schedule
+Audit Type
+Frequency
+Scope
+Performed By
+Output
+Code security review
+Every sprint (2 weeks)
+New code changes — focus on auth, data handling, input validation
+Developer (self) + AI-assisted review
+Issues logged in GitHub Issues
+Dependency audit
+Weekly (automated)
+All npm dependencies — check for CVEs
+Automated via npm audit in CI/CD
+Auto-PR for patches; manual review for majors
+Penetration testing
+Before launch + quarterly
+Full application — OWASP Top 10 + custom Indipips attack scenarios
+External security consultant (Phase 2)
+Formal pentest report with CVSS scores
+Access control review
+Monthly
+All user roles and permissions — verify principle of least privilege
+Admin
+Updated RBAC matrix
+Data encryption audit
+Quarterly
+Verify all sensitive data encrypted at rest and in transit
+Tech lead
+Encryption compliance checklist
+Compliance audit
+Quarterly
+UIDAI, PMLA, GST, IT Act compliance checklist
+CA + Legal advisor
+Compliance status report
+Business continuity test
+Bi-annual
+DR plan — simulate database failure, restore from backup
+Tech
+RTO/RPO measurement report
+Annual security review
+Annually
+Complete security posture — all controls, policies, procedures
+External auditor (post-investment)
+ISO 27001 gap analysis report
+8. Security Checklist — Pre-Launch
+Category
+Checklist Item
+Status
+Verified By
+Authentication
+bcrypt cost factor 12 verified — hash time ~300ms
+Pending
+Tech
+Authentication
+JWT expiry set correctly — 7d access, 30d refresh
+Pending
+Tech
+Authentication
+Account lockout after 5 failed attempts — tested
+Pending
+Tech
+Authentication
+2FA mandatory for all ADMIN accounts — verified
+Pending
+Tech
+Authorization
+All protected routes require valid JWT — tested
+Pending
+Tech
+Authorization
+Resource ownership check on challenge/payout endpoints
+Pending
+Tech
+Authorization
+Admin-only endpoints blocked for TRADER role
+Pending
+Tech
+Input Validation
+Joi validation on all POST/PUT request bodies
+Pending
+Tech
+Input Validation
+File upload mime type + size validation
+Pending
+Tech
+SQL Injection
+Prisma used for all queries — no raw SQL
+Pending
+Tech
+XSS
+Helmet CSP headers configured and tested
+Pending
+Tech
+Webhooks
+Razorpay webhook signature verification tested
+Pending
+Tech
+Webhooks
+Upstox webhook signature verification tested
+Pending
+Tech
+Encryption
+Bank account numbers AES-256 encrypted in DB
+Pending
+Tech
+Encryption
+KYC documents in S3 with SSE-AES256
+Pending
+Tech
+Encryption
+TLS 1.3 verified via ssllabs.com (A+ rating)
+Pending
+Tech
+Rate Limiting
+Auth endpoints: 5/min rate limit tested
+Pending
+Tech
+Rate Limiting
+Global API: 100/min rate limit tested
+Pending
+Tech
+Network
+Admin subdomain IP whitelist active
+Pending
+Tech
+Network
+Cloudflare WAF rules active and tested
+Pending
+Tech
+Secrets
+All secrets in .env — not in codebase
+Pending
+Tech
+Secrets
+Production uses AWS Secrets Manager
+Pending
+Tech
+Logging
+All auth events logged with IP and timestamp
+Pending
+Tech
+Logging
+Admin actions logged with full audit trail
+Pending
+Tech
+Compliance
+UIDAI — no Aadhaar number stored — verified
+Pending
+Legal
+Compliance
+GST invoices generated correctly — tested
+Pending
+Finance
+Compliance
+TDS calculation correct for test payout
+Pending
+Finance
+Privacy
+Privacy policy published on indipips.com
+Pending
+Legal
+Privacy
+Terms & Conditions published on indipips.com
+Pending
+Legal
+INDIPIPS PRIVATE LIMITED  |  Security Policy Document (SPD)  |  INDI-SPD-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited. Unauthorized reproduction prohibited.
+--- END OF Indipips_SPD_FULL_v1.0.docx ---
+
+--- START OF Indipips_TAD_FULL_v1.0.docx ---
+INDIPIPS
+India's Premier Proprietary Trading Platform
+TECHNICAL ARCHITECTURE DOCUMENT
+
+API Design, Coding Standards, Risk Engine Spec & Development Guidelines
+Document Code: INDI-TAD-001  |  Version: 1.0  |  Date: March 2026
+CONFIDENTIAL & PROPRIETARY
+Field
+Details
+Document Code
+INDI-TAD-001
+Version
+1.0
+Status
+Final — Approved
+Prepared By
+Indipips Founding Team
+Date
+March 2026
+1. Development Environment Setup
+1.1 Prerequisites
+Tool
+Version
+Purpose
+Install Command
+Node.js
+20 LTS
+JavaScript runtime
+Download from nodejs.org — use LTS version
+npm
+Bundled with Node
+Package manager
+Bundled with Node.js
+Git
+2.x+
+Version control
+Download from git-scm.com
+PostgreSQL
+15.x
+Local development database
+Download from postgresql.org
+Redis
+7.x
+Local cache + queue
+Use Docker: docker run -d -p 6379:6379 redis:7
+VS Code
+Latest
+IDE
+Download from code.visualstudio.com
+Postman / Thunder Client
+Latest
+API testing
+Postman.com or VS Code extension
+Docker
+Latest
+Redis + optional local services
+Download from docker.com
+
+1.2 VS Code Extensions — Mandatory
+Extension
+ID
+Purpose
+ESLint
+dbaeumer.vscode-eslint
+Real-time JavaScript linting
+Prettier
+esbenp.prettier-vscode
+Code formatting on save
+Prisma
+Prisma.prisma
+Prisma schema syntax highlighting and autocomplete
+GitLens
+eamodio.gitlens
+Git blame, history, and comparison
+Tailwind CSS IntelliSense
+bradlc.vscode-tailwindcss
+Tailwind class autocomplete
+Thunder Client
+rangav.vscode-thunder-client
+In-editor API testing (replaces Postman)
+Error Lens
+usernamehw.errorlens
+Inline error display in editor
+Auto Rename Tag
+formulahendry.auto-rename-tag
+Auto-rename HTML/JSX closing tags
+Path Intellisense
+christian-kohler.path-intellisense
+File path autocomplete in imports
+
+1.3 Project Structure — Complete
+Path
+Type
+Contents
+indipips/
+Root
+Monorepo root — contains frontend/ and backend/
+indipips/frontend/
+Directory
+React + Vite SPA application
+indipips/frontend/src/pages/
+Directory
+One file per page/route
+indipips/frontend/src/components/
+Directory
+Reusable UI components
+indipips/frontend/src/components/shared/
+Directory
+Generic: Button, Input, Modal, Table, Badge
+indipips/frontend/src/components/dashboard/
+Directory
+Dashboard-specific: PnLChart, DrawdownGauge
+indipips/frontend/src/stores/
+Directory
+Zustand state stores
+indipips/frontend/src/hooks/
+Directory
+Custom React hooks
+indipips/frontend/src/api/
+Directory
+Axios API call functions (one file per domain)
+indipips/frontend/src/utils/
+Directory
+Pure utility functions
+indipips/frontend/src/types/
+Directory
+TypeScript type definitions (if using TS)
+indipips/backend/
+Directory
+Node.js + Express API server
+indipips/backend/src/server.js
+File
+Express app setup + middleware + route mounting
+indipips/backend/src/controllers/
+Directory
+Route handlers — thin, delegate to services
+indipips/backend/src/routes/
+Directory
+Express router definitions
+indipips/backend/src/services/
+Directory
+Business logic — thick, contains all logic
+indipips/backend/src/middleware/
+Directory
+Auth, rate limit, validation middleware
+indipips/backend/src/utils/
+Directory
+Helper functions — currency, date, crypto
+indipips/backend/src/jobs/
+Directory
+Bull queue job processors
+indipips/backend/src/cron/
+Directory
+node-cron scheduled tasks
+indipips/backend/prisma/
+Directory
+Prisma schema, migrations, seed
+indipips/backend/.env
+File
+Environment variables — NEVER commit to Git
+indipips/backend/.env.example
+File
+Template .env without actual values — commit this
+2. Coding Standards & Conventions
+2.1 JavaScript Coding Standards
+Rule
+Standard
+Example
+Variable declarations
+const for immutable, let for mutable — never var
+const userId = req.userId;
+Arrow functions
+Prefer for callbacks and short functions
+const double = (n) => n * 2;
+Async/Await
+Always use async/await — never .then() chains
+const user = await prisma.user.findUnique(...)
+Error handling
+Always try-catch in async functions — never unhandled rejections
+try { ... } catch (error) { ... }
+Destructuring
+Use object destructuring for function parameters
+const { email, password } = req.body;
+Template literals
+Use template literals for string concatenation
+const msg = 'Hello ${user.fullName}!';
+Optional chaining
+Use ?. to safely access nested properties
+const name = user?.profile?.fullName;
+Nullish coalescing
+Use ?? for default values
+const port = process.env.PORT ?? 5000;
+Imports
+Group: 1) Node built-ins, 2) npm packages, 3) local files
+Blank line between groups
+Semicolons
+Always use semicolons — prevents ASI bugs
+const x = 1;
+Quotes
+Single quotes for JS, double quotes in JSX attributes
+const str = 'hello'; <div className='box'>
+
+2.2 File & Function Naming
+Element
+Convention
+Good Example
+Bad Example
+JS files (backend)
+kebab-case
+auth.controller.js
+AuthController.js
+JS files (frontend components)
+PascalCase.jsx
+DrawdownMeter.jsx
+drawdown-meter.jsx
+JS files (frontend pages)
+PascalCase.page.jsx
+Dashboard.page.jsx
+dashboard.jsx
+Custom hooks
+use-kebab-case.js
+use-challenge.js
+challengeHook.js
+Constants
+UPPER_SNAKE_CASE
+MAX_DAILY_LOSS_PCT
+maxDailyLoss
+Functions
+camelCase — verb + noun
+getUserProfile, createChallenge
+GetUser, challenge_create
+Async functions
+Same as functions
+const fetchChallenge = async () => {}
+const fetchChallenge = () => {}
+Boolean variables
+is/has/can prefix
+isActive, hasKyc, canWithdraw
+active, kyc, withdraw
+Event handlers
+handle prefix
+handleSubmit, handlePayment
+onSubmit, submitForm
+
+2.3 Git Standards
+Rule
+Standard
+Branch naming
+feature/description, fix/description, hotfix/description, release/v1.0.0
+Main branch
+Protected — no direct pushes — all changes via PR
+Commit format
+type(scope): description — e.g., feat(auth): add JWT refresh token endpoint
+Commit types
+feat, fix, refactor, docs, test, chore, security, perf, style
+Commit message length
+Subject line max 72 characters — add body for complex changes
+PR requirements
+Must pass lint + tests + at least 1 review before merge
+.gitignore
+node_modules/, .env, dist/, .next/, *.log, coverage/
+Git hooks
+pre-commit: lint + format, pre-push: run tests
+
+2.4 Error Handling Standards
+Error Type
+HTTP Code
+Response Format
+Logging
+Validation error
+400 Bad Request
+{ success:false, message:string, errors:[{field, message}] }
+None — expected
+Authentication error
+401 Unauthorized
+{ success:false, message: 'Access denied. No token provided.' }
+IP + endpoint logged
+Authorization error
+403 Forbidden
+{ success:false, message: 'Access denied. Insufficient permissions.' }
+userId + endpoint logged
+Not found
+404 Not Found
+{ success:false, message: 'Resource not found.' }
+None — expected
+Rate limit exceeded
+429 Too Many Requests
+{ success:false, message: 'Too many requests. Try again in 60 seconds.' }
+IP + count logged
+Business logic error
+422 Unprocessable
+{ success:false, message: specific business rule message }
+None — expected
+Server error
+500 Internal Server Error
+{ success:false, message: 'Something went wrong. Please try again.' }
+Full stack to Sentry
+External service error
+503 Service Unavailable
+{ success:false, message: 'Service temporarily unavailable.' }
+Error + service name to Sentry
+3. API Design — Complete Reference
+3.1 API Conventions
+Base URL: https://api.indipips.com/api/v1
+All request and response bodies in JSON — Content-Type: application/json
+Authentication via Authorization: Bearer {accessToken} header
+All timestamps in ISO 8601 format: 2026-03-14T09:15:00.000Z
+All monetary values returned as numbers in rupees (converted from paise in DB)
+Pagination via ?page=1&limit=20 — response includes pagination object
+Sorting via ?sortBy=createdAt&sortOrder=desc
+Filtering via ?status=ACTIVE&planId={uuid}
+
+3.2 Standard Response Envelope
+// Success Response
+{
+  "success": true,
+  "message": "Challenge fetched successfully.",
+  "data": { /* payload */ },
+  "pagination": { "total": 150, "page": 1, "limit": 20, "totalPages": 8 }
+}
+
+// Error Response
+{
+  "success": false,
+  "message": "Email already registered. Please login instead.",
+  "errors": [{ "field": "email", "message": "Email already in use" }]
+}
+
+3.3 Complete API Endpoint Reference
+3.3.1 Authentication Endpoints
+Method
+Endpoint
+Auth
+Request Body
+Success Response
+Error Codes
+POST
+/auth/register
+Public
+fullName, email, phone, password, referralCode?
+201: user object + tokens
+400: validation, 409: duplicate email/phone
+POST
+/auth/verify-phone
+Public
+phone, otp
+200: phoneVerified:true
+400: invalid OTP, 410: OTP expired
+POST
+/auth/verify-email
+Public
+token (from email link)
+200: emailVerified:true
+400: invalid token, 410: token expired
+POST
+/auth/login
+Public
+email, password
+200: user object + tokens
+401: wrong credentials, 403: suspended, 423: locked
+POST
+/auth/logout
+Trader
+(none)
+200: logged out
+401: no token
+POST
+/auth/refresh
+Public
+refreshToken
+200: new accessToken + refreshToken
+401: invalid/expired refresh token
+POST
+/auth/forgot-password
+Public
+email
+200: OTP sent message
+404: email not found
+POST
+/auth/reset-password
+Public
+email, otp, newPassword
+200: password reset success
+400: invalid OTP, 410: OTP expired
+POST
+/auth/resend-otp
+Public
+phone OR email, type
+200: OTP resent
+429: rate limit (max 3/hour)
+
+3.3.2 User Profile Endpoints
+Method
+Endpoint
+Auth
+Request Body / Params
+Success Response
+Error Codes
+GET
+/users/profile
+Trader
+(none)
+200: complete user profile object
+401: no token
+PUT
+/users/profile
+Trader
+fullName?, phone? (requires new OTP)
+200: updated user profile
+400: validation, 409: phone taken
+PUT
+/users/change-password
+Trader
+currentPassword, newPassword
+200: password changed
+400: wrong current password
+DELETE
+/users/account
+Trader
+password (confirmation)
+200: deletion requested — 30 day process
+400: wrong password
+
+3.3.3 KYC Endpoints
+Method
+Endpoint
+Auth
+Request Body
+Success Response
+Error Codes
+GET
+/kyc/status
+Trader
+(none)
+200: { kycStatus, aadhaarVerified, bankVerified, panSubmitted }
+401
+POST
+/kyc/aadhaar/initiate
+Trader
+aadhaarNumber, consent:true
+200: requestId + OTP sent message
+400: invalid format, 422: already verified
+POST
+/kyc/aadhaar/verify
+Trader
+requestId, otp
+200: { aadhaarVerified:true, name }
+400: wrong OTP, 410: expired, 422: UIDAI rejected
+POST
+/kyc/pan
+Trader
+panNumber
+200: PAN saved
+400: invalid format
+POST
+/kyc/bank
+Trader
+accountNumber, ifsc
+200: { bankVerified:true, bankName }
+400: invalid IFSC, 422: bank verification failed
+DELETE
+/kyc/bank
+Trader
+(none)
+200: bank details removed
+422: has pending payout
+
+3.3.4 Challenge Plans Endpoints
+Method
+Endpoint
+Auth
+Request
+Success Response
+Notes
+GET
+/plans
+Public
+?isActive=true
+200: array of plan objects with computed amounts
+Cached in Redis 24hr
+GET
+/plans/:id
+Public
+planId in path
+200: single plan with full details
+Cache 24hr
+POST
+/plans
+Super Admin
+name, accountSize, challengeFee, profitTarget, dailyLossLimit, maxDrawdown, minTradingDays, maxTradingDays
+201: created plan
+Super Admin only
+PUT
+/plans/:id
+Super Admin
+Any plan field
+200: updated plan
+Invalidates Redis cache
+DELETE
+/plans/:id
+Super Admin
+planId in path
+200: plan deactivated (soft delete)
+Sets isActive:false — never hard delete
+POST
+/plans/seed
+Super Admin
+(none)
+200: 5 plans seeded
+One-time setup — idempotent
+
+3.3.5 Challenge Management Endpoints
+Method
+Endpoint
+Auth
+Request Body / Params
+Success Response
+Error Codes
+POST
+/challenges/purchase
+Trader
+planId
+201: { orderId, amount, gst, total }
+400: plan not found, 422: already has active challenge for plan
+POST
+/challenges/payment/verify
+Trader
+razorpayOrderId, razorpayPaymentId, razorpaySignature
+201: challenge created + dashboard data
+400: signature invalid, 422: already processed
+GET
+/challenges
+Trader
+?status=ACTIVE&page=1&limit=10
+200: paginated challenge list
+401
+GET
+/challenges/:id
+Trader
+challengeId in path
+200: full challenge with stats
+401, 403: not owner, 404
+GET
+/challenges/:id/dashboard
+Trader
+challengeId in path
+200: complete dashboard data (P&L, drawdown, rules, trades)
+401, 403, 404
+GET
+/challenges/:id/trades
+Trader
+?page=1&limit=20&sortBy=entryTime
+200: paginated trade history
+401, 403, 404
+GET
+/challenges/:id/certificate
+Trader
+challengeId (must be PASSED)
+200: { certificateUrl, verificationCode }
+403: not passed, 404
+
+3.3.6 Broker Integration Endpoints
+Method
+Endpoint
+Auth
+Request
+Success Response
+Error Codes
+POST
+/broker/connect
+Trader
+brokerType (upstox/zerodha), apiKey, apiSecret
+200: connected + lastSyncAt
+400: invalid credentials, 422: already connected
+GET
+/broker/status
+Trader
+(none)
+200: { connected, brokerType, lastSyncAt, isStale }
+401
+POST
+/broker/sync
+Trader
+(none) — manual re-sync trigger
+200: synced X trades
+429: max 1 manual sync per 5 min
+DELETE
+/broker/disconnect
+Trader
+(none)
+200: disconnected — API keys deleted
+401, 422: active challenge running
+GET
+/broker/positions
+Trader
+(none)
+200: current open positions from broker
+401, 422: not connected
+
+3.3.7 Payout Endpoints
+Method
+Endpoint
+Auth
+Request Body / Params
+Success Response
+Error Codes
+GET
+/payouts
+Trader
+?status=PENDING&page=1
+200: paginated payout history
+401
+POST
+/payouts
+Trader
+challengeId, amountRequested
+201: payout request created
+400: min amount, 422: KYC incomplete/bank not verified/too soon
+GET
+/payouts/:id
+Trader
+payoutId in path
+200: payout details + breakdown
+401, 403, 404
+DELETE
+/payouts/:id
+Trader
+payoutId — only PENDING
+200: request cancelled
+422: already processed
+
+3.3.8 Referral Endpoints
+Method
+Endpoint
+Auth
+Request
+Success Response
+Notes
+GET
+/referrals
+Trader
+(none)
+200: { code, totalReferrals, earnings, pendingEarnings }
+Own referral stats
+GET
+/referrals/history
+Trader
+?page=1
+200: paginated referral earnings history
+Sorted by date desc
+GET
+/referrals/leaderboard
+Public
+?limit=20
+200: top referrers (anonymized by default)
+Cached 24hr
+
+3.3.9 Notification Endpoints
+Method
+Endpoint
+Auth
+Request
+Success Response
+Notes
+GET
+/notifications
+Trader
+?isRead=false&page=1
+200: paginated notifications
+Unread first
+PUT
+/notifications/:id/read
+Trader
+notificationId in path
+200: marked read
+Updates isRead, readAt
+PUT
+/notifications/read-all
+Trader
+(none)
+200: all marked read
+Bulk update
+DELETE
+/notifications/:id
+Trader
+notificationId
+200: deleted
+Soft delete
+
+3.3.10 Public Endpoints
+Method
+Endpoint
+Auth
+Request
+Response
+Cache
+GET
+/leaderboard
+Public
+?limit=50
+200: top funded traders — name masked to first+last initial
+24hr Redis
+GET
+/certificates/verify/:code
+Public
+Verification code in path
+200: certificate details + trader name
+None — realtime
+GET
+/health
+Public
+(none)
+200: { status:ok, db:ok, redis:ok, timestamp }
+None
+
+3.3.11 Admin Endpoints
+Method
+Endpoint
+Auth
+Request
+Success Response
+Notes
+GET
+/admin/dashboard
+Admin
+(none)
+200: KPIs — traders, revenue, active challenges, pending payouts
+Real-time counts
+GET
+/admin/traders
+Admin
+?status=ACTIVE&search=name&page=1
+200: paginated traders with challenge summary
+Full profile data
+GET
+/admin/traders/:id
+Admin
+traderId in path
+200: complete trader profile + all challenge history
+Includes KYC status
+PUT
+/admin/traders/:id/suspend
+Admin
+reason
+200: trader suspended — login blocked
+Sends suspension email
+PUT
+/admin/traders/:id/reinstate
+Admin
+notes
+200: trader reinstated
+Sends reinstatement email
+GET
+/admin/challenges
+Admin
+?status=ACTIVE&page=1
+200: all challenges with risk stats
+Color-coded in frontend
+GET
+/admin/challenges/:id
+Admin
+challengeId
+200: full challenge details + all trades
+For investigation
+GET
+/admin/payouts
+Admin
+?status=PENDING&page=1
+200: payout queue with trader details
+Sorted oldest first
+PUT
+/admin/payouts/:id/approve
+Admin
+notes?
+200: payout approved + Razorpay initiated
+Triggers bank transfer
+PUT
+/admin/payouts/:id/reject
+Admin
+reason
+200: payout rejected + email sent
+Trader notified
+GET
+/admin/analytics/revenue
+Admin
+?period=monthly&year=2026
+200: revenue breakdown by period
+Charted in frontend
+GET
+/admin/analytics/risk
+Admin
+(none)
+200: total funded capital, max exposure, drawdown distribution
+Real-time
+POST
+/admin/broadcast
+Admin
+subject, message, audience (all/funded/active)
+200: queued notification
+Sends email + in-app
+
+3.3.12 Webhook Endpoints (System-to-System)
+Method
+Endpoint
+Auth
+Expected Payload
+Action
+Security
+POST
+/webhooks/razorpay
+Webhook signature
+Razorpay event payload
+Process payment/payout events
+HMAC-SHA256 signature verification mandatory
+POST
+/webhooks/upstox
+Webhook signature
+Upstox trade event payload
+Ingest trade, trigger Risk Engine
+X-Upstox-Signature header verification
+POST
+/webhooks/zerodha
+Webhook signature
+Zerodha trade event payload
+Ingest trade, trigger Risk Engine
+Zerodha postback token verification
+4. Risk Engine — Complete Technical Specification
+4.1 Risk Engine Architecture
+The Risk Management Engine (RME) is the most critical and performance-sensitive component of Indipips. It must evaluate 8 trading rules in real-time within 5 seconds of every trade execution. The RME is implemented as a dedicated service module that is triggered via the webhook controller.
+
+4.2 Rule Evaluation — Detailed Algorithm
+Rule ID
+Rule Name
+Formula
+Input Data
+Violation Condition
+Action on Violation
+Reset
+RME-001
+Daily Loss Limit
+dailyPnl / accountSize * 100
+dailyPnl, accountSize
+dailyPnl < -(accountSize * 0.04)
+Suspend challenge (temporary), email + SMS
+9:15 AM IST next trading day
+RME-002
+Max Overall Drawdown
+(peakBalance - currentBalance) / accountSize * 100
+peakBalance, currentBalance, accountSize
+(peakBalance-currentBalance) > (accountSize*0.08)
+FAIL challenge permanently, email + SMS
+Never — terminal state
+RME-003
+Profit Target Check
+totalPnl / accountSize * 100
+totalPnl, accountSize
+totalPnl >= (accountSize * 0.08)
+Trigger pass evaluation (not violation)
+N/A — pass condition
+RME-004
+Min Trading Days
+COUNT(DISTINCT tradeDate)
+daysTraded
+daysTraded < 5 when profit target met
+Block pass — not a violation
+N/A — prerequisite
+RME-005
+Max Challenge Duration
+CURRENT_DATE - startDate
+startDate, expiryDate
+CURRENT_DATE > expiryDate
+EXPIRE challenge at midnight cron
+Never — terminal state
+RME-006
+Consistency Rule
+maxSingleDayPnl / totalPnl * 100
+Daily P&L aggregation
+Any single day > 40% of totalPnl
+Warning x2, then FAIL on 3rd
+Never — cumulative
+RME-007
+Market Hours
+entryTime hour:minute (IST)
+trade.entryTime, timezone IST
+trade before 09:15 or after 15:15 IST
+Flag trade — warning x2, disqualify on 3rd
+Per trading day
+RME-008
+Overnight Position
+Open positions at 15:31 IST
+trade.isOpen at 15:31 PM cron
+Any trade.isOpen = true at 15:31 IST
+Close position logically, apply loss to dailyPnl, warning
+Daily at 15:31 IST
+
+4.3 Risk Engine Code Flow
+// risk-engine.service.js — Core evaluation function
+async function evaluateTrade(challengeId, newTrade) {
+  // Step 1: Load challenge from Redis cache (5-min TTL)
+  let challenge = await redis.get('challenge:' + challengeId);
+  if (!challenge) challenge = await prisma.challenge.findUnique({ where: { id: challengeId } });
+
+  // Step 2: Calculate new values
+  const newDailyPnl = challenge.dailyPnl + newTrade.pnl;
+  const newTotalPnl = challenge.totalPnl + newTrade.pnl;
+  const newBalance = challenge.accountSize + newTotalPnl;
+  const newPeak = Math.max(challenge.peakBalance, newBalance);
+
+  // Step 3: Check DAILY LOSS LIMIT (RME-001)
+  if (newDailyPnl < -(challenge.accountSize * 0.04)) {
+    await suspendChallenge(challengeId, 'DAILY_LOSS_LIMIT', 'temporary');
+    await notifyTrader(challenge.userId, 'DAILY_LOSS_HIT');
+    return { status: 'SUSPENDED', reason: 'Daily loss limit reached' };
+  }
+
+  // Step 4: Check MAX DRAWDOWN (RME-002)
+  const drawdown = newPeak - newBalance;
+  if (drawdown > challenge.accountSize * 0.08) {
+    await failChallenge(challengeId, 'MAX_DRAWDOWN_EXCEEDED');
+    await notifyTrader(challenge.userId, 'CHALLENGE_FAILED');
+    return { status: 'FAILED', reason: 'Maximum drawdown exceeded' };
+  }
+
+  // Step 5: Update challenge in DB (atomic transaction)
+  const updated = await prisma.challenge.update({
+    where: { id: challengeId },
+    data: { currentBalance: newBalance, peakBalance: newPeak,
+            totalPnl: newTotalPnl, dailyPnl: newDailyPnl }
+  });
+
+  // Step 6: Update Redis cache
+  await redis.setex('challenge:' + challengeId, 300, JSON.stringify(updated));
+
+  // Step 7: Emit real-time update via Socket.io
+  io.to('challenge:' + challengeId).emit('trade:update', {
+    pnl: newTotalPnl / 100, dailyPnl: newDailyPnl / 100,
+    balance: newBalance / 100, drawdown: drawdown / 100
+  });
+
+  // Step 8: Check PROFIT TARGET (RME-003) — non-violation
+  if (newTotalPnl >= challenge.accountSize * 0.08 && challenge.daysTraded >= 5) {
+    await evaluatePassConditions(challengeId);
+  }
+}
+
+4.4 Cron Job Specifications
+Job Name
+Cron Expression (IST)
+UTC Equivalent
+Action
+Failure Handling
+daily-pnl-reset
+15 9 * * 1-5
+45 3 * * 1-5
+Set dailyPnl = 0 for all ACTIVE challenges
+Retry 3x, alert on Sentry if all fail
+market-close-check
+31 15 * * 1-5
+01 10 * * 1-5
+Check overnight positions, update daysTraded
+Retry 3x, manual admin check
+challenge-expiry
+1 0 * * *
+30 18 * * *
+Mark expired challenges as EXPIRED
+Retry 3x, next-day catch-up
+leaderboard-refresh
+5 0 * * *
+35 18 * * *
+Recalculate leaderboard, cache in Redis
+Stale data served from cache — non-critical
+consistency-check
+35 15 * * 1-5
+05 10 * * 1-5
+Check 40% consistency rule for all active challenges
+Log violations, increment counter
+payout-reminder
+0 10 * * 1
+30 4 * * 1
+Email funded traders with pending eligible payouts
+Non-critical — skip on failure
+db-backup
+0 2 * * *
+30 20 * * *
+Trigger Railway/AWS RDS automated backup
+Alert on Sentry if backup fails
+stale-broker-alert
+*/30 9-16 * * 1-5
+*/30 3-10 * * 1-5
+Alert if broker last sync > 10 minutes during market hours
+Email admin + check broker API status
+5. Frontend Architecture Specifications
+5.1 Routing Structure
+Route
+Component
+Auth Required
+Description
+/
+LandingPage
+No
+Marketing landing page — hero, plans, how it works, FAQ
+/login
+LoginPage
+No (redirect if logged in)
+Email + password login form
+/register
+RegisterPage
+No (redirect if logged in)
+Registration with OTP verification
+/forgot-password
+ForgotPasswordPage
+No
+Email OTP-based password reset
+/dashboard
+DashboardPage
+Trader
+Main trading dashboard
+/challenges
+ChallengesPage
+Trader
+List of all challenges
+/challenges/:id
+ChallengePage
+Trader (owner only)
+Individual challenge detail
+/payout
+PayoutPage
+Trader (KYC complete)
+Payout requests and history
+/kyc
+KYCPage
+Trader
+KYC verification flow
+/profile
+ProfilePage
+Trader
+Account settings and security
+/referral
+ReferralPage
+Trader
+Referral code and earnings
+/leaderboard
+LeaderboardPage
+No
+Public funded trader leaderboard
+/certificates/verify/:code
+CertificateVerifyPage
+No
+Public certificate verification
+/admin
+AdminDashboard
+Admin
+Admin overview
+/admin/traders
+AdminTradersPage
+Admin
+Trader management
+/admin/challenges
+AdminChallengesPage
+Admin
+Challenge monitoring
+/admin/payouts
+AdminPayoutsPage
+Admin
+Payout queue
+/admin/analytics
+AdminAnalyticsPage
+Admin
+Revenue and risk analytics
+*
+NotFoundPage
+No
+404 error page
+
+5.2 Dashboard Component Specifications
+Component
+Data Source
+Update Frequency
+Key Props
+Visual
+AccountSummaryCard
+challengeStore
+Real-time via Socket.io
+challenge, isLive
+Balance, P&L, status badge
+PnLChart
+challengeStore (trade history)
+On new trade
+trades[], period
+Recharts LineChart — daily P&L line
+DrawdownGauge
+challengeStore
+Real-time via Socket.io
+currentDrawdown, maxDrawdown
+Circular gauge — green→yellow→red
+DailyLossMonitor
+challengeStore
+Real-time via Socket.io
+dailyPnl, dailyLimit
+Progress bar — percentage of daily limit used
+RulesPanel
+challengeStore
+On each trade
+challenge (all rule fields)
+Checklist — green tick or red X per rule
+TradesTable
+API fetch + real-time
+On new trade
+challengeId, pageSize
+Sortable table — last 20 trades
+ChallengeTimer
+challengeStore
+Every second (countdown)
+expiryDate
+Countdown — days/hours/minutes
+ProgressWidget
+challengeStore
+Real-time
+totalPnl, target
+Circular progress — % of profit target
+BrokerConnectCard
+challengeStore
+On connect/disconnect
+brokerConnected, brokerType
+Connect button or status + last sync time
+6. Environment Variables — Complete Reference
+Variable
+Required
+Description
+Example Value
+Never In Git
+PORT
+Yes
+Express server port
+5000
+No
+NODE_ENV
+Yes
+Environment flag
+development | production
+No
+DATABASE_URL
+Yes
+PostgreSQL connection string
+postgresql://user:pass@host:5432/db
+YES
+REDIS_URL
+Yes
+Redis connection URL
+redis://localhost:6379
+YES
+JWT_SECRET
+Yes
+JWT signing secret
+64-char random string
+YES
+JWT_REFRESH_SECRET
+Yes
+Refresh token signing secret
+64-char random string
+YES
+JWT_EXPIRES_IN
+Yes
+Access token expiry
+7d
+No
+JWT_REFRESH_EXPIRES_IN
+Yes
+Refresh token expiry
+30d
+No
+RAZORPAY_KEY_ID
+Yes
+Razorpay API key
+rzp_live_xxxxxxxxxx
+YES
+RAZORPAY_KEY_SECRET
+Yes
+Razorpay API secret
+xxxxxxxxxxxxxxxx
+YES
+RAZORPAY_WEBHOOK_SECRET
+Yes
+Webhook signature secret
+xxxxxxxxxxxxxxxx
+YES
+SENDGRID_API_KEY
+Yes
+SendGrid API key
+SG.xxxxxxxxxxxxxxxx
+YES
+SENDGRID_FROM_EMAIL
+Yes
+Sender email address
+noreply@indipips.com
+No
+MSG91_API_KEY
+Yes
+MSG91 API key
+xxxxxxxxxxxxxxxx
+YES
+MSG91_SENDER_ID
+Yes
+DLT approved sender ID
+INDPPS
+No
+AWS_ACCESS_KEY_ID
+Yes
+AWS IAM access key
+AKIAXXXXXXXXXXXXXXXX
+YES
+AWS_SECRET_ACCESS_KEY
+Yes
+AWS IAM secret key
+xxxxxxxxxxxxxxxx
+YES
+AWS_REGION
+Yes
+AWS region
+ap-south-1 (Mumbai)
+No
+S3_BUCKET_NAME
+Yes
+S3 bucket for KYC + certs
+indipips-kyc-production
+No
+DIGIO_API_KEY
+Yes
+UIDAI KYC provider API key
+xxxxxxxxxxxxxxxx
+YES
+DIGIO_API_SECRET
+Yes
+UIDAI KYC provider secret
+xxxxxxxxxxxxxxxx
+YES
+UPSTOX_API_KEY
+Yes
+Upstox developer app key
+xxxxxxxxxxxxxxxx
+YES
+UPSTOX_API_SECRET
+Yes
+Upstox developer app secret
+xxxxxxxxxxxxxxxx
+YES
+ENCRYPTION_KEY
+Yes
+AES-256 key for bank details
+64-char hex string
+YES
+FRONTEND_URL
+Yes
+Allowed CORS origin
+https://indipips.com
+No
+ADMIN_IP_WHITELIST
+Yes
+Comma-separated admin IPs
+103.x.x.x,49.x.x.x
+No
+SENTRY_DSN
+Yes
+Sentry project DSN
+https://xxx@sentry.io/xxx
+No
+INDIPIPS PRIVATE LIMITED  |  Technical Architecture Document (TAD)  |  INDI-TAD-001  |  v1.0
+This document is confidential and proprietary to Indipips Private Limited.
+--- END OF Indipips_TAD_FULL_v1.0.docx ---
+

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -6,7 +7,6 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const passport = require('passport');
 require('./config/passport'); // Initialize passport strategy
-require('dotenv').config();
 const http = require('http');
 const socketIO = require('./utils/socket');
 
