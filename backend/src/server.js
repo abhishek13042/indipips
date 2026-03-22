@@ -112,18 +112,18 @@ app.use(globalLimiter)
 app.use(morgan('dev'));
 
 // ── Routes ──────────────────────────────────────────
-app.use('/api/v1/auth', authLimiter, authRoutes);
-app.use('/api/v1/auth/resend-otp', otpLimiter);
-app.use('/api/v1/auth/verify', otpLimiter);
+app.use('/api/v1/auth', authRoutes);
+// app.use('/api/v1/auth/resend-otp', otpLimiter); // Removed, handled in routes
+// app.use('/api/v1/auth/verify', otpLimiter); // Removed, handled in routes
 
 app.use('/api/v1/plans', planRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/challenges', challengeRoutes);
 
-app.use('/api/v1/trades', tradeLimiter, tradeRoutes);
-app.use('/api/v1/payouts', payoutLimiter, payoutRoutes);
-app.use('/api/v1/kyc', kycLimiter, kycRoutes);
-app.use('/api/v1/admin', adminLimiter, adminRoutes);
+app.use('/api/v1/trades', tradeRoutes);
+app.use('/api/v1/payouts', payoutRoutes);
+app.use('/api/v1/kyc', kycRoutes);
+app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/webhooks', webhookLimiter);
 
 app.use('/api/v1/payments', paymentRoutes);

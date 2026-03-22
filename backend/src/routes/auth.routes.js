@@ -4,12 +4,13 @@ const router = express.Router();
 const { register, login, getProfile, refreshToken, logout, forgotPassword, resetPassword, verifyEmail, resendOTP } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { validate, registerSchema, loginSchema } = require('../middleware/validation.middleware');
+const { authLimiter, otpLimiter } = require('../middleware/rateLimiter.middleware');
 
 // ── Public Routes ──────────────────────────────────
-router.post('/register', validate(registerSchema), register);
+router.post('/register', authLimiter, validate(registerSchema), register);
 router.post('/verify-email', verifyEmail);
-router.post('/resend-otp', resendOTP);
-router.post('/login', validate(loginSchema), login);
+router.post('/resend-otp', otpLimiter, resendOTP);
+router.post('/login', authLimiter, validate(loginSchema), login);
 router.post('/refresh-token', refreshToken);
 router.post('/logout', logout);
 router.post('/forgot-password', forgotPassword);

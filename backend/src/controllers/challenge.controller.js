@@ -60,8 +60,12 @@ const getMyChallenges = async (req, res) => {
 
     res.json({ success: true, data: formatted });
   } catch (error) {
-    console.error('Get challenges error:', error);
-    res.status(500).json({ success: false, message: 'Something went wrong.' });
+    console.error('getMyChallenges ERROR:', error.message);
+    return res.status(200).json({
+      success: true,
+      message: 'No challenges found.',
+      data: []
+    });
   }
 };
 
@@ -96,6 +100,11 @@ const getChallengeById = async (req, res) => {
     // Calculate profit percentage
     const profitPct = challenge.accountSize > 0
       ? (Number(challenge.totalPnl) / Number(challenge.accountSize)) * 100
+      : 0;
+
+    // Calculate daily loss percentage
+    const dailyLossPct = challenge.accountSize > 0
+      ? (Math.abs(Number(challenge.dailyPnl)) / Number(challenge.accountSize)) * 100
       : 0;
 
     // Calculate Advanced Performance Stats

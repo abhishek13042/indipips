@@ -98,23 +98,23 @@ model Challenge {
 }
 
 model Trade {
-  id            String      @id @default(uuid())
-  challengeId   String
-  userId        String
-  tradeType     TradeType
-  quantity      Int
-  entryPrice    BigInt
-  exitPrice     BigInt?
-  pnl           BigInt      @default(0)
-  entryTime     DateTime    @default(now())
-  exitTime      DateTime?
-  brokerTradeId String?     @unique
-  createdAt     DateTime    @default(now())
-  status        TradeStatus @default(OPEN)
-  symbol        String
-  instrument    String?
-  tradeDate     DateTime?
-  challenge     Challenge   @relation(fields: [challengeId], references: [id])
+  id          String   @id @default(uuid())
+  challengeId String
+  userId      String
+  instrument  String
+  tradeType   String
+  quantity    Int
+  entryPrice  BigInt
+  exitPrice   BigInt?
+  pnl         BigInt   @default(0)
+  tradeDate   String?
+  entryTime   DateTime @default(now())
+  exitTime    DateTime?
+  status      String   @default("OPEN")
+  orderType   String   @default("MARKET")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
 }
 
 model Payment {

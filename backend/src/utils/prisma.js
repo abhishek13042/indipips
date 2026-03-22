@@ -1,60 +1,71 @@
-const { Client } = require('pg');
+const { pool } = require('./db');
 const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
 
 console.log('--- PRISMA MOCK LOADED FROM src/utils/prisma.js ---');
 
 const runQuery = async (text, params) => {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
-  try {
-    const res = await client.query(text, params);
-    return res;
-  } finally {
-    await client.end();
-  }
+  return await pool.query(text, params);
 };
 
 const formatResult = (table, row) => {
   if (!row) return null;
   const r = { ...row };
-  // BigInt conversions
-  if (table === 'User') r.walletBalance = r.walletBalance ? BigInt(r.walletBalance) : 0n;
+  // Convert BigInt to Number for JSON serialization compatibility
+  // Paise values for accounts/trades fit safely in JS Numbers (< 2^53)
+  if (table === 'User') r.walletBalance = r.walletBalance ? Number(r.walletBalance) : 0;
   if (table === 'Plan') {
-    r.accountSize = BigInt(r.accountSize);
-    r.challengeFee = BigInt(r.challengeFee);
+    r.accountSize = Number(r.accountSize);
+    r.challengeFee = Number(r.challengeFee);
   }
   if (table === 'Challenge') {
-    if (r.accountSize) r.accountSize = BigInt(r.accountSize);
-    if (r.targetProfit) r.targetProfit = BigInt(r.targetProfit);
-    if (r.currentBalance) r.currentBalance = BigInt(r.currentBalance);
-    if (r.startingBalance) r.startingBalance = BigInt(r.startingBalance);
-    if (r.maxDrawdownAmount) r.maxDrawdownAmount = BigInt(r.maxDrawdownAmount);
-    if (r.dailyLossLimitAmount) r.dailyLossLimitAmount = BigInt(r.dailyLossLimitAmount);
+    if (r.accountSize) r.accountSize = Number(r.accountSize);
+    if (r.targetProfit) r.targetProfit = Number(r.targetProfit);
+    if (r.currentBalance) r.currentBalance = Number(r.currentBalance);
+    if (r.startingBalance) r.startingBalance = Number(r.startingBalance);
+    if (r.maxDrawdownAmount) r.maxDrawdownAmount = Number(r.maxDrawdownAmount);
+    if (r.dailyLossLimitAmount) r.dailyLossLimitAmount = Number(r.dailyLossLimitAmount);
+    if (r.peakBalance) r.peakBalance = Number(r.peakBalance);
+    if (r.totalPnl) r.totalPnl = Number(r.totalPnl);
+    if (r.dailyPnl) r.dailyPnl = Number(r.dailyPnl);
   }
   if (table === 'Trade') {
-    if (r.entryPrice) r.entryPrice = BigInt(r.entryPrice);
-    if (r.exitPrice) r.exitPrice = BigInt(r.exitPrice);
-    if (r.size) r.size = BigInt(r.size);
-    if (r.pnl) r.pnl = BigInt(r.pnl);
+    if (r.entryPrice) r.entryPrice = Number(r.entryPrice);
+    if (r.exitPrice) r.exitPrice = Number(r.exitPrice);
+    if (r.size) r.size = Number(r.size);
+    if (r.pnl) r.pnl = Number(r.pnl);
   }
   if (table === 'Payout') {
-    if (r.amountRequested) r.amountRequested = BigInt(r.amountRequested);
-    if (r.tdsAmount) r.tdsAmount = BigInt(r.tdsAmount);
-    if (r.netPayoutAmount) r.netPayoutAmount = BigInt(r.netPayoutAmount);
-    if (r.feeRefund) r.feeRefund = BigInt(r.feeRefund);
+    if (r.amountRequested) r.amountRequested = Number(r.amountRequested);
+    if (r.tdsAmount) r.tdsAmount = Number(r.tdsAmount);
+    if (r.netPayoutAmount) r.netPayoutAmount = Number(r.netPayoutAmount);
+    if (r.feeRefund) r.feeRefund = Number(r.feeRefund);
   }
   return r;
 };
 
 const createMockModel = (table) => ({
-  findUnique: async ({ where }) => {
+  findUnique: async ({ where, include }) => {
     const keys = Object.keys(where);
     const text = `SELECT * FROM "${table}" WHERE "${keys[0]}" = $1`;
     const res = await runQuery(text, [where[keys[0]]]);
-    return formatResult(table, res.rows[0]);
+    const row = res.rows[0];
+    if (!row) return null;
+    const result = formatResult(table, row);
+    
+    if (include) {
+      for (const key of Object.keys(include)) {
+        // Simple 1-level include support
+        const relatedTable = key.charAt(0).toUpperCase() + key.slice(1);
+        const foreignKey = key + 'Id';
+        if (row[foreignKey]) {
+          const relRes = await runQuery(`SELECT * FROM "${relatedTable}" WHERE "id" = $1`, [row[foreignKey]]);
+          result[key] = formatResult(relatedTable, relRes.rows[0]);
+        }
+      }
+    }
+    return result;
   },
-  findFirst: async ({ where = {} }) => {
+  findFirst: async ({ where = {}, include }) => {
     let text = `SELECT * FROM "${table}"`;
     const params = [];
     if (where.OR) {
@@ -83,9 +94,23 @@ const createMockModel = (table) => ({
     }
     text += ' LIMIT 1';
     const res = await runQuery(text, params);
-    return formatResult(table, res.rows[0]);
+    const row = res.rows[0];
+    if (!row) return null;
+    const result = formatResult(table, row);
+
+    if (include) {
+      for (const key of Object.keys(include)) {
+        const relatedTable = key.charAt(0).toUpperCase() + key.slice(1);
+        const foreignKey = key + 'Id';
+        if (row[foreignKey]) {
+          const relRes = await runQuery(`SELECT * FROM "${relatedTable}" WHERE "id" = $1`, [row[foreignKey]]);
+          result[key] = formatResult(relatedTable, relRes.rows[0]);
+        }
+      }
+    }
+    return result;
   },
-  findMany: async ({ where = {}, orderBy } = {}) => {
+  findMany: async ({ where = {}, orderBy, include } = {}) => {
     let text = `SELECT * FROM "${table}"`;
     const params = [];
     const keys = Object.keys(where);
@@ -102,7 +127,21 @@ const createMockModel = (table) => ({
         text += ` ORDER BY "${key}" ${ob[key].toUpperCase()}`;
     }
     const res = await runQuery(text, params);
-    return res.rows.map(r => formatResult(table, r));
+    const rows = res.rows.map(r => formatResult(table, r));
+
+    if (include && rows.length > 0) {
+      for (const row of rows) {
+        for (const key of Object.keys(include)) {
+          const relatedTable = key.charAt(0).toUpperCase() + key.slice(1);
+          const foreignKey = key + 'Id';
+          if (row[foreignKey]) {
+            const relRes = await runQuery(`SELECT * FROM "${relatedTable}" WHERE "id" = $1`, [row[foreignKey]]);
+            row[key] = formatResult(relatedTable, relRes.rows[0]);
+          }
+        }
+      }
+    }
+    return rows;
   },
   create: async ({ data }) => {
     const now = new Date();

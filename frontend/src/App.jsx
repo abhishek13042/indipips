@@ -110,7 +110,7 @@ export default function App() {
               element={<ChallengesPage />} />
             <Route path="/challenges/:id" 
               element={<ChallengeDetailPage />} />
-            <Route path="/terminal/:id" 
+            <Route path="/terminal" 
               element={<TradingTerminalPage />} />
             <Route path="/buy-challenge" 
               element={<BuyChallengePage />} />

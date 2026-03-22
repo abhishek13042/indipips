@@ -25,11 +25,23 @@ const colors = {
 }
 
 const formatINR = (paise) => {
+  if (!paise && paise !== 0) return '₹0'
+  const rupees = Number(paise) / 100
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0
-  }).format(paise / 100)
+  }).format(rupees)
+}
+
+const formatAccountSize = (paise) => {
+  if (!paise && paise !== 0) return '₹0'
+  const rupees = Number(paise) / 100
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(rupees)
 }
 
 const BuyChallengePage = () => {
@@ -69,10 +81,10 @@ const BuyChallengePage = () => {
     return planType === selectedType
   })
 
-  // Calculate totals for selected plan
-  const baseAmount = selectedPlan ? selectedPlan.challengeFee / 100 : 0
-  const gstAmount = baseAmount * 0.18
-  const totalAmount = baseAmount + gstAmount
+  // Calculate totals for selected plan in PAISE
+  const challengeFeePaise = selectedPlan ? Number(selectedPlan.challengeFee) : 0
+  const gstPaise = Math.round(challengeFeePaise * 0.18)
+  const totalPaise = challengeFeePaise + gstPaise
 
   const handlePayment = async () => {
     if (!selectedPlan) return
@@ -145,33 +157,25 @@ const BuyChallengePage = () => {
     }
   }
 
-  // Helper for rules list
-  const renderRules = (type) => {
-    if (type === 'ONE_STEP') return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 8% Profit Target</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 4% Daily Loss</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 8% Max Drawdown</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 45 Days</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
-      </div>
-    )
-    if (type === 'TWO_STEP') return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Phase 1: 8% Target</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Phase 2: 5% Target</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 5% Daily Loss</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 60 Days</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
-      </div>
-    )
+  const renderRules = (plan) => {
+    if (!plan) return null
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> No Profit Target</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Instant Funding</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 3% Daily Loss</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 5% Max Drawdown</div>
-        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
+        {plan.profitTarget > 0 ? (
+          <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.profitTarget}% Profit Target</div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', color: colors.success }}><span>✓</span> No Profit Target</div>
+        )}
+        {plan.phase2Target > 0 && <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.phase2Target}% Phase 2 Target</div>}
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.dailyLossLimit}% Daily Loss Limit</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.maxDrawdown}% Max Drawdown</div>
+        {plan.maxTradingDays > 0 ? (
+          <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.maxTradingDays} Days Limit</div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Unlimited Trading Days</div>
+        )}
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.minTradingDays} Min Trading Days</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> {plan.profitSplit}% Profit Split</div>
       </div>
     )
   }
@@ -255,11 +259,12 @@ const BuyChallengePage = () => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '16px', padding: '4px' }}>
-                  {filteredPlans.map(plan => {
-                    const isSelected = selectedPlan?.id === plan.id
-                    const isPro = plan.name?.toLowerCase().includes('pro')
-                    const planFee = plan.challengeFee / 100
-                    const planGST = planFee * 0.18
+                    {filteredPlans.map(plan => {
+                      const isSelected = selectedPlan?.id === plan.id
+                      const isPro = plan.name?.toLowerCase().includes('pro')
+                      const challengeFee = Number(plan.challengeFee)
+                      const gstAmount = Math.round(challengeFee * 0.18)
+                      const totalAmount = challengeFee + gstAmount
                     
                     return (
                       <div
@@ -303,7 +308,7 @@ const BuyChallengePage = () => {
                           {plan.name}
                         </div>
                         <div style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '24px' }}>
-                          {formatINR(plan.accountSize)}
+                          {formatAccountSize(plan.accountSize)}
                         </div>
 
                         <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '20px' }}>
@@ -311,17 +316,17 @@ const BuyChallengePage = () => {
                             {formatINR(plan.challengeFee)}
                           </div>
                           <div style={{ fontSize: '12px', color: colors.text2, marginTop: '4px' }}>
-                            + 18% GST ({formatINR(plan.challengeFee * 0.18)})
+                            + 18% GST ({formatINR(Math.round(Number(plan.challengeFee) * 0.18))})
                           </div>
                           <div style={{ fontSize: '13px', color: 'white', marginTop: '4px', fontWeight: 600 }}>
-                            = {formatINR(plan.challengeFee * 1.18)} total
+                            = {formatINR(Math.round(Number(plan.challengeFee) * 1.18))} total
                           </div>
                           <div style={{ fontSize: '12px', color: colors.success, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <ArrowLeft size={12} /> Fee refunded with first payout
                           </div>
                         </div>
 
-                        {renderRules(selectedType)}
+                        {renderRules(plan)}
                       </div>
                     )
                   })}
@@ -350,14 +355,14 @@ const BuyChallengePage = () => {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', color: colors.text2, fontSize: '14px' }}>
                     <span>GST (18%)</span>
-                    <span>{formatINR(selectedPlan.challengeFee * 0.18)}</span>
+                    <span>{formatINR(Math.round(Number(selectedPlan.challengeFee) * 0.18))}</span>
                   </div>
                   
                   <div style={{ height: '1px', backgroundColor: colors.border, marginBottom: '20px' }}></div>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', fontWeight: 'bold' }}>
                     <span style={{ color: 'white', fontSize: '16px' }}>Total Amount</span>
-                    <span style={{ color: colors.accent, fontSize: '20px' }}>{formatINR(selectedPlan.challengeFee * 1.18)}</span>
+                    <span style={{ color: colors.accent, fontSize: '20px' }}>{formatINR(Math.round(Number(selectedPlan.challengeFee) * 1.18))}</span>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px', color: colors.text2, marginBottom: '32px' }}>
@@ -389,7 +394,7 @@ const BuyChallengePage = () => {
                     onMouseEnter={(e) => { if(!paymentLoading) e.target.style.backgroundColor = colors.accent2 }}
                     onMouseLeave={(e) => { if(!paymentLoading) e.target.style.backgroundColor = colors.accent }}
                   >
-                    {paymentLoading ? 'Creating order...' : `Pay ${formatINR(selectedPlan.challengeFee * 1.18)} →`}
+                    {paymentLoading ? 'Creating order...' : `Pay ${formatINR(Math.round(Number(selectedPlan.challengeFee) * 1.18))} →`}
                   </button>
 
                   <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '24px', fontSize: '11px', color: colors.text2 }}>

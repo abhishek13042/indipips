@@ -42,91 +42,94 @@ exports.getGlobalAnalytics = async (req, res, next) => {
       instruments: [],
       bias: { buy: 0, sell: 0 },
       dayPerformance: [
-        { l: 'Sun', v: 0, isPos: true, rawPnl: BigInt(0) },
-        { l: 'Mon', v: 0, isPos: true, rawPnl: BigInt(0) },
-        { l: 'Tue', v: 0, isPos: true, rawPnl: BigInt(0) },
-        { l: 'Wed', v: 0, isPos: true, rawPnl: BigInt(0) },
-        { l: 'Thu', v: 0, isPos: true, rawPnl: BigInt(0) },
-        { l: 'Fri', v: 0, isPos: true, rawPnl: BigInt(0) }
-      ]
-    };
+      { l: 'Sun', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Mon', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Tue', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Wed', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Thu', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Fri', v: 0, isPos: true, rawPnl: BigInt(0) },
+      { l: 'Sat', v: 0, isPos: true, rawPnl: BigInt(0) }
+    ]
+  };
 
-    if (totalTrades === 0) {
-      analytics.totalAllocation = Number(totalAllocation);
-      return res.status(200).json({ success: true, data: analytics });
+  if (totalTrades === 0) {
+    analytics.totalAllocation = Number(totalAllocation) / 100;
+    return res.status(200).json({ success: true, data: analytics });
+  }
+
+  let totalHoldingMs = 0;
+  const instrumentMap = {};
+
+  trades.forEach(t => {
+    // rawPnl is already BigInt in DB
+    const pnlRaw = t.pnl || BigInt(0);
+    const pnlNum = Number(pnlRaw) / 100;
+    const isWin = pnlNum >= 0;
+
+    // Profitability
+    if (isWin) analytics.won++;
+    else analytics.lost++;
+
+    // Holding Period
+    if (t.entryTime && t.exitTime) {
+      totalHoldingMs += (new Date(t.exitTime) - new Date(t.entryTime));
     }
 
-    let totalHoldingMs = 0;
-    const instrumentMap = {};
+    // Bias
+    if (t.tradeType === 'BUY') analytics.bias.buy++;
+    else analytics.bias.sell++;
 
-    trades.forEach(t => {
-      const pnl = Number(t.pnl) / 100; // Assuming cents
-      const isWin = pnl >= 0;
+    // Instruments
+    const symbol = t.symbol || t.instrument || 'Unknown';
+    if (!instrumentMap[symbol]) instrumentMap[symbol] = { name: symbol, w: 0, l: 0, total: 0 };
+    if (isWin) instrumentMap[symbol].w++;
+    else instrumentMap[symbol].l++;
+    instrumentMap[symbol].total++;
 
-      // Profitability
-      if (isWin) analytics.won++;
-      else analytics.lost++;
+    // Trading Day Performance (0-6)
+    // Handle safely
+    const entryDate = t.entryTime ? new Date(t.entryTime) : new Date();
+    const day = entryDate.getDay(); 
+    if (analytics.dayPerformance[day]) {
+       analytics.dayPerformance[day].rawPnl += pnlRaw;
+    }
 
-      // Holding Period
-      if (t.entryTime && t.exitTime) {
-        totalHoldingMs += (new Date(t.exitTime) - new Date(t.entryTime));
-      }
+    // Sessions (UTC)
+    const hour = entryDate.getUTCHours();
+    let sessionIndex = 2; // Asia/Other
+    if (hour >= 13 && hour <= 21) sessionIndex = 0; // NY
+    else if (hour >= 8 && hour < 13) sessionIndex = 1; // London
 
-      // Bias
-      if (t.tradeType === 'BUY') analytics.bias.buy++;
-      else analytics.bias.sell++;
+    analytics.sessions[sessionIndex].total++;
+    if (isWin) analytics.sessions[sessionIndex].won++;
+  });
 
-      // Instruments
-      if (!instrumentMap[t.symbol]) instrumentMap[t.symbol] = { name: t.symbol, w: 0, l: 0, total: 0 };
-      if (isWin) instrumentMap[t.symbol].w++;
-      else instrumentMap[t.symbol].l++;
-      instrumentMap[t.symbol].total++;
+  // Formatting calculations
+  analytics.winRate = Number(((analytics.won / totalTrades) * 100).toFixed(1));
+  
+  // Average holding time
+  const avgMs = totalHoldingMs / totalTrades;
+  const avgMins = Math.round(avgMs / 60000);
+  if (avgMins > 60) analytics.avgHolding = `${Math.round(avgMins / 60)}h ${avgMins % 60}m`;
+  else analytics.avgHolding = `${avgMins}m`;
 
-      // Trading Day Performance (0 = Sunday, 1 = Monday ...)
-      const day = new Date(t.entryTime).getUTCDay();
-      if (day >= 0 && day <= 5) {
-         analytics.dayPerformance[day].rawPnl += BigInt(Math.round(pnl * 100));
-      }
+  // Top 3 Instruments
+  const sortedInst = Object.values(instrumentMap).sort((a, b) => b.total - a.total).slice(0, 3);
+  analytics.instruments = sortedInst;
 
-      // Sessions (Simplistic UTC hour mapping)
-      // NY: 13-21, London: 8-16, Asia: 0-8. We'll assign based on entry hour
-      const hour = new Date(t.entryTime).getUTCHours();
-      let sessionIndex = -1;
-      if (hour >= 13 && hour <= 21) sessionIndex = 0; // NY
-      else if (hour >= 8 && hour < 13) sessionIndex = 1; // London
-      else sessionIndex = 2; // Asia (or fallback)
+  // Session percents
+  analytics.sessions.forEach(s => {
+    s.percent = s.total > 0 ? Number(((s.won / s.total) * 100).toFixed(1)) : 0;
+    s.val = s.percent;
+  });
 
-      analytics.sessions[sessionIndex].total++;
-      if (isWin) analytics.sessions[sessionIndex].won++;
-    });
-
-    // Formatting calculations
-    analytics.totalAllocation = Number(totalAllocation);
-    analytics.winRate = Number(((analytics.won / totalTrades) * 100).toFixed(1));
-    
-    // Average holding time
-    const avgMs = totalHoldingMs / totalTrades;
-    const avgMins = Math.round(avgMs / 60000);
-    if (avgMins > 60) analytics.avgHolding = `${Math.round(avgMins / 60)}h ${avgMins % 60}m`;
-    else analytics.avgHolding = `${avgMins}m`;
-
-    // Top 3 Instruments
-    const sortedInst = Object.values(instrumentMap).sort((a, b) => b.total - a.total).slice(0, 3);
-    analytics.instruments = sortedInst;
-
-    // Session percents
-    analytics.sessions.forEach(s => {
-      s.percent = s.total > 0 ? Number(((s.won / s.total) * 100).toFixed(1)) : 0;
-      s.val = s.percent;
-    });
-
-    // Day Performance logic
-    analytics.dayPerformance.forEach(d => {
-       const p = Number(d.rawPnl) / 100;
-       d.v = Math.abs(p); // value for bar height
-       d.isPos = p >= 0;
-       delete d.rawPnl;
-    });
+  // Day Performance logic
+  analytics.dayPerformance.forEach(d => {
+     const p = Number(d.rawPnl) / 100;
+     d.v = Math.abs(p);
+     d.isPos = p >= 0;
+     delete d.rawPnl;
+  });
 
     res.status(200).json({
       success: true,

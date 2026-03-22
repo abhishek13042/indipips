@@ -14,7 +14,9 @@ const colors = {
   muted: '#6B7280'
 }
 
-const formatINR = (rupees) => {
+const formatINR = (paise) => {
+  if (!paise && paise !== 0) return '₹0'
+  const rupees = Number(paise) / 100
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',

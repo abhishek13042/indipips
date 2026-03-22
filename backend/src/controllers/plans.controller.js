@@ -45,9 +45,10 @@ const getPlans = async (req, res) => {
     const formatted = plans.map(plan => ({
       id: plan.id,
       name: plan.name,
+      type: plan.challengeType, // Alias for frontend
       challengeType: plan.challengeType,
-      accountSize: Number(plan.accountSize) / 100,
-      challengeFee: Number(plan.challengeFee) / 100,
+      accountSize: Number(plan.accountSize),
+      challengeFee: Number(plan.challengeFee),
       profitTarget: plan.profitTarget,
       phase2Target: plan.phase2Target,
       dailyLossLimit: plan.dailyLossLimit,
@@ -55,6 +56,7 @@ const getPlans = async (req, res) => {
       minTradingDays: plan.minTradingDays,
       maxTradingDays: plan.maxTradingDays,
       profitSplit: plan.profitSplit,
+      isActive: plan.isActive
     }));
 
     res.json({ success: true, message: 'Plans fetched successfully!', data: formatted });
@@ -78,9 +80,10 @@ const getPlanById = async (req, res) => {
       data: {
         id: plan.id,
         name: plan.name,
+        type: plan.challengeType,
         challengeType: plan.challengeType,
-        accountSize: Number(plan.accountSize) / 100,
-        challengeFee: Number(plan.challengeFee) / 100,
+        accountSize: Number(plan.accountSize),
+        challengeFee: Number(plan.challengeFee),
         profitTarget: plan.profitTarget,
         phase2Target: plan.phase2Target,
         dailyLossLimit: plan.dailyLossLimit,
@@ -88,6 +91,7 @@ const getPlanById = async (req, res) => {
         minTradingDays: plan.minTradingDays,
         maxTradingDays: plan.maxTradingDays,
         profitSplit: plan.profitSplit,
+        isActive: plan.isActive
       },
     });
   } catch (error) {

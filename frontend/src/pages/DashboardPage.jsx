@@ -64,7 +64,7 @@ const DashboardPage = () => {
         c => c.status === 'ACTIVE' || c.status === 'PASSED' || c.status === 'SUSPENDED'
       )
       setChallenge(active || null)
-      setTrades(tradesRes.data.data || [])
+      setTrades(tradesRes.data?.data?.trades || [])
     } catch (err) {
       console.error(err)
       setError('Failed to load dashboard data')

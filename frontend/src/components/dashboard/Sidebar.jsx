@@ -9,6 +9,7 @@ import {
   Bell,
   Trophy,
   User,
+  Monitor,
   LogOut
 } from 'lucide-react'
 import useAuthStore from '../../stores/authStore'
@@ -31,6 +32,7 @@ const colors = {
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'terminal', label: 'Terminal', icon: Monitor, path: '/terminal' },
   { id: 'challenges', label: 'My Challenges', icon: TrendingUp, path: '/challenges' },
   { id: 'buy-challenge', label: 'Buy Challenge', icon: ShoppingCart, path: '/buy-challenge' },
   { id: 'payouts', label: 'Payouts', icon: Wallet, path: '/payouts' },
