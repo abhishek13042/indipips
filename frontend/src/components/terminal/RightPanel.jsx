@@ -99,7 +99,7 @@ const RightPanel = ({ selectedInstrument, challenge, marketStatus, onPlaceOrder,
     // Run once immediately
     updateOptions()
     return () => clearInterval(timer)
-  }, [selectedInstrument, strikes])
+  }, [selectedInstrument, strikes, marketStatus])
 
   const handleOptionClick = (type, strike, optionType, price) => {
     const instrument = selectedInstrument + '-' + optionType + '-' + strike
@@ -124,13 +124,11 @@ const RightPanel = ({ selectedInstrument, challenge, marketStatus, onPlaceOrder,
 
   useEffect(() => {
     if (challenge && targetPctRef.current && targetBarRef.current && pnlProgressRef.current) {
-      if (!challenge.config?.profitTarget) return
-      const target = challenge.config.profitTarget / 100
-      const currentPnl = challenge.totalPnl / 100
+      const pct = challenge.profitTargetPct || 0
+      const currentPnl = challenge.totalPnl || 0
+      const target = challenge.profitTargetAmount || 0
       
-      const pct = Math.max(0, Math.min(100, (currentPnl / target) * 100))
-      
-      targetPctRef.current.textContent = pct.toFixed(1) + '%'
+      targetPctRef.current.textContent = pct + '%'
       targetBarRef.current.style.width = pct + '%'
       pnlProgressRef.current.textContent = `${formatINR(currentPnl)} / ${formatINR(target)}`
     }

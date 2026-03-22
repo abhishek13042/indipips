@@ -34,10 +34,10 @@ const TopBar = ({ selectedInstrument, onInstrumentChange, challenge, marketStatu
     return () => clearInterval(timer)
   }, [])
 
-  // Sync PNL ref directly on challenge mutation without tracking it as an effect dependency cleanly
+  // Sync PNL ref directly on challenge mutation
   useEffect(() => {
     if (pnlBadgeRef.current && challenge) {
-      const pnlRupees = (challenge.totalPnl || 0) / 100
+      const pnlRupees = challenge.totalPnl || 0
       pnlBadgeRef.current.textContent = (pnlRupees >= 0 ? '+' : '') + formatINR(pnlRupees)
       pnlBadgeRef.current.style.color = pnlRupees >= 0 ? '#10B981' : '#EF4444'
     }
@@ -75,7 +75,7 @@ const TopBar = ({ selectedInstrument, onInstrumentChange, challenge, marketStatu
           return (
             <button
               key={inst.id}
-              onClick={() => onInstrumentChange(inst.id, inst.tvSymbol)}
+              onClick={() => onInstrumentChange(inst.id)}
               style={{
                 padding: '4px 12px',
                 borderRadius: 6,

@@ -54,12 +54,15 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
 
   useEffect(() => {
     const simulate = setInterval(() => {
-      // Simulate prices parsing native DOM nodes mapping immediately isolating states locally organically
-      const isOpen = marketStatus?.isOpen || true
-      if (!isOpen) return
+      const isOpen = marketStatus?.isOpen
+      if (!isOpen) {
+        // Update window global even if closed to sync initial state
+        window.__indipips_live_prices = prices.current
+        return
+      }
       
       Object.keys(prices.current).forEach(sym => {
-        const change = (Math.random() - 0.5) * 0.001
+        const change = (Math.random() - 0.5) * 0.0005
         const newPrice = prices.current[sym] * (1 + change)
         prices.current[sym] = newPrice
         
@@ -75,11 +78,9 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
           changeRefs.current[sym].style.color = pctChange >= 0 ? '#10B981' : '#EF4444'
         }
 
-        // Send Global Topbar ping via physical callback directly manipulating DOM
         if (sym === selectedInstrument && updateGlobalPriceRef) {
           updateGlobalPriceRef(newPrice, pctChange)
         }
-        // Update physical window globals to decouple shared memory
         window.__indipips_live_prices = prices.current
       })
     }, 2000)
@@ -88,13 +89,12 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
   }, [selectedInstrument, marketStatus, updateGlobalPriceRef])
 
   useEffect(() => {
-    // Sync React states selectively to Ref wrappers rendering UI safely isolated over time linearly
-    if (challenge && balanceRef.current) {
-      const bal = (challenge.currentBalance || 0) / 100
-      const totalP = (challenge.totalPnl || 0) / 100
-      const dPnl = (challenge.dailyPnl || 0) / 100
+    if (challenge) {
+      const bal = challenge.currentBalance || 0
+      const totalP = challenge.totalPnl || 0
+      const dPnl = challenge.dailyPnl || 0
 
-      balanceRef.current.textContent = formatINR(bal)
+      if (balanceRef.current) balanceRef.current.textContent = formatINR(bal)
       
       if (pnlRef.current) {
         pnlRef.current.textContent = (totalP >= 0 ? '+' : '') + formatINR(totalP)
@@ -107,20 +107,20 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
       }
 
       // Progress bars
-      if (dailyBarRef.current && challenge.config?.dailyLossLimit) {
-        const lossLimit = challenge.config.dailyLossLimit / 100
+      if (dailyBarRef.current) {
         const lossAbs = dPnl < 0 ? Math.abs(dPnl) : 0
-        const pct = Math.min(100, (lossAbs / lossLimit) * 100)
+        const limit = challenge.dailyLossLimitAmount || 1
+        const pct = Math.min(100, (lossAbs / limit) * 100)
         dailyBarRef.current.style.width = pct + '%'
-        dailyBarRef.current.style.background = pct > 80 ? '#EF4444' : '#F59E0B'
+        dailyBarRef.current.style.background = pct > 80 ? '#EF4444' : pct > 50 ? '#F59E0B' : '#10B981'
       }
       
-      if (ddBarRef.current && challenge.config?.maxDrawdownLimit) {
-        const ddLimit = challenge.config.maxDrawdownLimit / 100
-        const ddAbs = totalP < 0 ? Math.abs(totalP) : 0
-        const pct = Math.min(100, (ddAbs / ddLimit) * 100)
-        ddBarRef.current.style.width = pct + '%'
-        ddBarRef.current.style.background = pct > 80 ? '#EF4444' : '#F59E0B'
+      if (ddBarRef.current) {
+        const pct = challenge.drawdownPct || 0
+        const limit = challenge.maxDrawdown || 8
+        const barPct = Math.min(100, (pct / limit) * 100)
+        ddBarRef.current.style.width = barPct + '%'
+        ddBarRef.current.style.background = barPct > 80 ? '#EF4444' : barPct > 50 ? '#F59E0B' : '#10B981'
       }
     }
   }, [challenge])
@@ -142,10 +142,7 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
           return (
             <div
               key={item.id}
-              onClick={() => {
-                const tvStr = 'NSE:' + (item.id === 'MIDCAPNIFTY' ? 'MIDCPNIFTY' : item.id)
-                onInstrumentChange(item.id, tvStr)
-              }}
+              onClick={() => onInstrumentChange(item.id)}
               style={{
                 padding: '8px 12px',
                 borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent',
@@ -158,13 +155,13 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 600, fontSize: 11, color: '#F1F5F9' }}>{item.label}</span>
                 <span ref={el => priceRefs.current[item.id] = el} style={{ fontSize: 11, fontWeight: 500 }}>
-                  {new Intl.NumberFormat('en-IN').format(BASE_PRICES[item.id].toFixed(2))}
+                  {new Intl.NumberFormat('en-IN').format(prices.current[item.id].toFixed(2))}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
                 <span style={{ fontSize: 10, color: '#475569' }}>{item.sub}</span>
                 <span ref={el => changeRefs.current[item.id] = el} style={{ fontSize: 10 }}>
-                  0.00%
+                  {changes.current[item.id].toFixed(2)}%
                 </span>
               </div>
             </div>
@@ -179,15 +176,21 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
           <span style={{ color: '#94A3B8' }}>Balance</span>
-          <span ref={balanceRef} style={{ color: '#F1F5F9', fontWeight: 600 }}>--</span>
+          <span ref={balanceRef} id="acct-balance" style={{ color: '#F1F5F9', fontWeight: 600 }}>
+            {challenge ? formatINR(challenge.currentBalance) : '--'}
+          </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
           <span style={{ color: '#94A3B8' }}>Total P&L</span>
-          <span ref={pnlRef} style={{ fontWeight: 600 }}>--</span>
+          <span ref={pnlRef} id="acct-total-pnl" style={{ fontWeight: 600, color: (challenge?.totalPnl || 0) >= 0 ? '#10B981' : '#EF4444' }}>
+            {challenge ? (challenge.totalPnl >= 0 ? '+' : '') + formatINR(challenge.totalPnl) : '--'}
+          </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 12 }}>
           <span style={{ color: '#94A3B8' }}>Day's P&L</span>
-          <span ref={dailyRef} style={{ fontWeight: 600 }}>--</span>
+          <span ref={dailyRef} id="acct-daily-pnl" style={{ fontWeight: 600, color: (challenge?.dailyPnl || 0) >= 0 ? '#10B981' : '#EF4444' }}>
+            {challenge ? (challenge.dailyPnl >= 0 ? '+' : '') + formatINR(challenge.dailyPnl) : '--'}
+          </span>
         </div>
 
         <div style={{ fontSize: 9, textTransform: 'uppercase', color: '#475569', fontWeight: 700, marginBottom: 8 }}>
@@ -198,9 +201,10 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
         <div style={{ marginBottom: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94A3B8', marginBottom: 4 }}>
             <span>Daily Loss Limit</span>
+            <span style={{ fontSize: 9 }}>{challenge?.dailyLossPct || 0}%</span>
           </div>
           <div style={{ height: 4, background: '#1E2D40', borderRadius: 2, overflow: 'hidden' }}>
-            <div ref={dailyBarRef} style={{ height: '100%', width: '0%', background: '#10B981', transition: 'width 0.3s' }} />
+            <div ref={dailyBarRef} id="progress-daily" style={{ height: '100%', width: (challenge?.dailyPnl < 0 ? Math.min(100, (Math.abs(challenge.dailyPnl) / (challenge.dailyLossLimitAmount || 1)) * 100) : 0) + '%', background: '#10B981', transition: 'width 0.3s' }} />
           </div>
         </div>
 
@@ -208,9 +212,10 @@ const WatchlistPanel = ({ selectedInstrument, onInstrumentChange, challenge, mar
         <div style={{ marginBottom: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94A3B8', marginBottom: 4 }}>
             <span>Max Drawdown</span>
+            <span style={{ fontSize: 9 }}>{challenge?.drawdownPct || 0}% / {challenge?.maxDrawdown || 8}%</span>
           </div>
           <div style={{ height: 4, background: '#1E2D40', borderRadius: 2, overflow: 'hidden' }}>
-            <div ref={ddBarRef} style={{ height: '100%', width: '0%', background: '#10B981', transition: 'width 0.3s' }} />
+            <div ref={ddBarRef} id="progress-drawdown" style={{ height: '100%', width: Math.min(100, ((challenge?.drawdownPct || 0) / (challenge?.maxDrawdown || 8)) * 100) + '%', background: '#10B981', transition: 'width 0.3s' }} />
           </div>
         </div>
 

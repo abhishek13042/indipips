@@ -7,18 +7,27 @@ const ChartPanel = ({ symbol }) => {
   useEffect(() => {
     if (!containerRef.current) return
 
-    // Destroy old widget if exists
-    if (widgetRef.current) {
-      containerRef.current.innerHTML = ''
-      widgetRef.current = null
-    }
+    // Clear container
+    containerRef.current.innerHTML = ''
 
-    // Create new script
+    // Create widget container
+    const widgetContainer = document.createElement('div')
+    widgetContainer.className = 'tradingview-widget-container'
+    widgetContainer.style.height = '100%'
+    widgetContainer.style.width = '100%'
+
+    const chartDiv = document.createElement('div')
+    chartDiv.className = 'tradingview-widget-container__widget'
+    chartDiv.style.height = '100%'
+    chartDiv.style.width = '100%'
+    widgetContainer.appendChild(chartDiv)
+
+    // Create script
     const script = document.createElement('script')
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
     script.async = true
     script.type = 'text/javascript'
-
+    
     const config = {
       autosize: true,
       symbol: symbol,
@@ -27,48 +36,28 @@ const ChartPanel = ({ symbol }) => {
       theme: 'dark',
       style: '1',
       locale: 'en',
-      backgroundColor: '#060B14',
-      gridColor: '#1E2D40',
+      enable_publishing: false,
       hide_top_toolbar: false,
       hide_legend: false,
+      save_image: false,
+      container_id: 'tv_chart_' + Math.random().toString(36).substring(7),
+      backgroundColor: '#060B14',
+      gridColor: 'rgba(30, 45, 64, 0.5)',
+      withdateranges: true,
       hide_side_toolbar: false,
       allow_symbol_change: false,
-      withdateranges: true,
-      save_image: false,
-      calendar: false,
-      hide_volume: false,
-      support_host: 'https://www.tradingview.com',
-      container_id: 'tv-chart-' + symbol.replace(':', '-'),
     }
 
     script.textContent = JSON.stringify(config)
-
-    const container = document.createElement('div')
-    container.className = 'tradingview-widget-container'
-    container.style.height = '100%'
-    container.style.width = '100%'
-
-    const chartDiv = document.createElement('div')
-    chartDiv.id = 'tv-chart-' + symbol.replace(':', '-')
-    chartDiv.style.height = '100%'
-    chartDiv.style.width = '100%'
-
-    container.appendChild(chartDiv)
-    container.appendChild(script)
-
-    containerRef.current.innerHTML = ''
-    containerRef.current.appendChild(container)
-
-    widgetRef.current = container
+    widgetContainer.appendChild(script)
+    containerRef.current.appendChild(widgetContainer)
 
     return () => {
-      // Cleanup on unmount or symbol change
       if (containerRef.current) {
         containerRef.current.innerHTML = ''
       }
-      widgetRef.current = null
     }
-  }, [symbol]) // ONLY re-run on symbol change
+  }, [symbol])
 
   return (
     <div

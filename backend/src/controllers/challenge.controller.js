@@ -5,66 +5,110 @@ const { calculatePerformanceStats } = require('../utils/statsEngine');
 // Get all challenges for logged in trader
 const getMyChallenges = async (req, res) => {
   try {
-    const cacheKey = `user:${req.userId}:challenges`;
-    
-    const challenges = await cache.getOrSet(cacheKey, async () => {
-      return await prisma.challenge.findMany({
-        where: { userId: req.userId },
-        include: {
-          plan: {
-            select: {
-              name: true,
-              accountSize: true,
-              challengeType: true,
-              profitTarget: true,
-              dailyLossLimit: true,
-              maxDrawdown: true,
-              minTradingDays: true,
-              maxTradingDays: true,
-              profitSplit: true,
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    }, 60); // 1 minute user-specific cache
+    const userId = req.userId; // Matches existing middleware
 
-    const formatted = challenges.map(c => ({
-      id: c.id,
-      status: c.status,
-      phase: c.phase,
-      startDate: c.startDate,
-      expiryDate: c.expiryDate,
-      currentBalance: Number(c.currentBalance) / 100,
-      accountSize: Number(c.accountSize) / 100,
-      peakBalance: Number(c.peakBalance) / 100,
-      totalPnl: Number(c.totalPnl) / 100,
-      dailyPnl: Number(c.dailyPnl) / 100,
-      daysTraded: c.daysTraded,
-      brokerConnected: c.brokerConnected,
-      passedAt: c.passedAt,
-      failReason: c.failReason,
-      createdAt: c.createdAt,
-      plan: {
-        name: c.plan.name,
-        challengeType: c.plan.challengeType,
-        accountSize: Number(c.plan.accountSize) / 100,
+    const challenges = await prisma.challenge.findMany({
+      where: { userId },
+      include: {
+        plan: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const formatted = challenges.map(c => {
+      const accountSize = Number(c.accountSize) / 100
+      const currentBalance = Number(c.currentBalance) / 100
+      const peakBalance = Number(c.peakBalance) / 100
+      const totalPnl = Number(c.totalPnl) / 100
+      const dailyPnl = Number(c.dailyPnl) / 100
+
+      // Calculate profit target amount
+      const profitTargetAmount = accountSize * (c.plan.profitTarget / 100)
+      const dailyLossLimitAmount = accountSize * (c.plan.dailyLossLimit / 100)
+      const maxDrawdownAmount = accountSize * (c.plan.maxDrawdown / 100)
+
+      // Calculate percentages for display
+      const profitTargetPct = profitTargetAmount > 0
+        ? Math.min(100, (totalPnl / profitTargetAmount) * 100).toFixed(1)
+        : '0.0'
+
+      const drawdownAmount = peakBalance - currentBalance
+      const drawdownPct = accountSize > 0
+        ? ((drawdownAmount / accountSize) * 100).toFixed(2)
+        : '0.00'
+
+      const dailyLossPct = accountSize > 0
+        ? ((Math.abs(Math.min(0, dailyPnl)) / accountSize) * 100).toFixed(2)
+        : '0.00'
+
+      // Days remaining
+      const now = new Date()
+      const expiry = c.expiryDate ? new Date(c.expiryDate) : null
+      const daysRemaining = expiry
+        ? Math.max(0, Math.ceil((expiry - now) / 86400000))
+        : null
+
+      return {
+        id: c.id,
+        userId: c.userId,
+        planId: c.planId,
+        status: c.status,
+        phase: c.phase,
+
+        // Money values (in rupees)
+        accountSize,
+        currentBalance,
+        peakBalance,
+        totalPnl,
+        dailyPnl,
+        dailyStartingBalance: Number(c.dailyStartingBalance || c.accountSize) / 100,
+
+        // Rule values
+        daysTraded: c.daysTraded,
+        consistencyViolations: c.consistencyViolations,
+        profitSplitPct: c.profitSplitPct,
+        isFunded: c.isFunded,
+
+        // Plan details
+        planName: c.plan.name || 'Unknown',
+        planType: c.plan.challengeType || 'ONE_STEP',
         profitTarget: c.plan.profitTarget,
         dailyLossLimit: c.plan.dailyLossLimit,
         maxDrawdown: c.plan.maxDrawdown,
         minTradingDays: c.plan.minTradingDays,
         maxTradingDays: c.plan.maxTradingDays,
-        profitSplit: c.plan.profitSplit,
-      }
-    }));
 
-    res.json({ success: true, data: formatted });
-  } catch (error) {
-    console.error('getMyChallenges ERROR:', error.message);
+        // Calculated amounts
+        profitTargetAmount,
+        dailyLossLimitAmount,
+        maxDrawdownAmount,
+
+        // Calculated percentages
+        profitTargetPct: parseFloat(profitTargetPct),
+        drawdownPct: parseFloat(drawdownPct),
+        dailyLossPct: parseFloat(dailyLossPct),
+
+        // Dates
+        startDate: c.startDate,
+        expiryDate: c.expiryDate,
+        passedAt: c.passedAt,
+        failReason: c.failReason,
+        daysRemaining,
+
+        createdAt: c.createdAt,
+      }
+    })
+
     return res.status(200).json({
       success: true,
-      message: 'No challenges found.',
-      data: []
+      message: formatted.length + ' challenge(s) found.',
+      data: formatted,
+    })
+  } catch (error) {
+    console.error('getMyChallenges ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch challenges: ' + error.message,
     });
   }
 };

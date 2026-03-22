@@ -35,37 +35,50 @@ export default function TradingTerminalPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
-  // Terminal State
+  // UI State
   const [selectedInstrument, setSelectedInstrument] = useState('NIFTY')
-  const [tvSymbol, setTvSymbol] = useState('NSE:NIFTY')
+  const [tvSymbol, setTvSymbol] = useState('CAPITALCOM:NIFTY50')
   
   // Data State
   const [challenge, setChallenge] = useState(null)
   const [positions, setPositions] = useState([])
-  const [marketStatus, setMarketStatus] = useState(null)
+  const [marketStatus, setMarketStatus] = useState({ isOpen: false })
 
-  // UI State
-  const [alert, setAlert] = useState(null)
-  const [showPassModal, setShowPassModal] = useState(false)
-  const [showFailModal, setShowFailModal] = useState(null)
-  const [toasts, setToasts] = useState([])
+  const getTVSymbol = (instrument) => {
+    const map = {
+      'NIFTY':       'CAPITALCOM:NIFTY50',
+      'BANKNIFTY':   'CAPITALCOM:BANKNIFTY',
+      'MIDCAPNIFTY': 'BSE:SENSEX',
+      'FINNIFTY':    'CAPITALCOM:NIFTY50',
+      'RELIANCE':    'BSE:RELIANCE',
+      'TCS':         'BSE:TCS',
+      'HDFCBANK':    'BSE:HDFCBANK',
+      'INFY':        'BSE:INFY',
+      'ICICIBANK':   'BSE:ICICIBANK',
+      'WIPRO':       'BSE:WIPRO',
+      'ADANIENT':    'BSE:ADANIENT',
+      'BAJFINANCE':  'BSE:BAJFINANCE',
+      'SBIN':        'BSE:SBIN',
+      'AXISBANK':    'BSE:AXISBANK',
+      'KOTAKBANK':   'BSE:KOTAKBANK',
+    }
+    return map[instrument] || 'CAPITALCOM:NIFTY50'
+  }
 
-  // Order loading states mapped for RightPanel
-  const [orderLoading, setOrderLoading] = useState(false)
-  const [orderStatus, setOrderStatus] = useState('idle')
-  const [lastOrderResult, setLastOrderResult] = useState(null)
+  const handleInstrumentChange = (instrument) => {
+    setSelectedInstrument(instrument)
+    setTvSymbol(getTVSymbol(instrument))
+  }
 
   const updateGlobalPriceRef = (price, change) => {
-    // This connects Watchlist to TopBar securely bypasses huge re-renders if passed as regular state
-    // We update TopBar refs organically from within TopBar via Challenge objects or native refs
-    // We use DOM ids to safely isolate updates natively
     const priceEl = document.getElementById('topbar-live-price')
     const changeEl = document.getElementById('topbar-live-change')
     if (priceEl && changeEl) {
+      const isLive = marketStatus?.isOpen
       priceEl.textContent = new Intl.NumberFormat('en-IN').format(price.toFixed(2))
-      priceEl.style.color = change >= 0 ? '#10B981' : '#EF4444'
+      priceEl.style.color = isLive ? (change >= 0 ? '#10B981' : '#EF4444') : '#94A3B8'
       changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(2) + '%'
-      changeEl.style.color = change >= 0 ? '#10B981' : '#EF4444'
+      changeEl.style.color = isLive ? (change >= 0 ? '#10B981' : '#EF4444') : '#94A3B8'
     }
   }
 
@@ -256,12 +269,47 @@ export default function TradingTerminalPage() {
 
     // EQUITY SNAPSHOT
     socket.on('equity:snapshot', (data) => {
-      setChallenge(prev => ({
-        ...prev,
-        currentBalance: data.currentBalance * 100,
-        totalPnl: data.totalPnl * 100,
-        dailyPnl: data.dailyPnl * 100
-      }))
+      // data already in rupees from backend update
+      setChallenge(prev => {
+        if (!prev) return prev
+        const updated = {
+          ...prev,
+          currentBalance: data.currentBalance,
+          totalPnl: data.totalPnl,
+          dailyPnl: data.dailyPnl,
+          peakBalance: data.peakBalance,
+          profitTargetPct: data.profitTargetPct,
+          drawdownPct: parseFloat(data.drawdownPct),
+          dailyLossPct: parseFloat(data.dailyLossPct)
+        }
+
+        // Direct DOM updates for performance (as requested in Step 5)
+        const balEl = document.getElementById('acct-balance')
+        if (balEl) balEl.textContent = '₹' + new Intl.NumberFormat('en-IN').format(data.currentBalance)
+        
+        const pnlEl = document.getElementById('acct-total-pnl')
+        if (pnlEl) {
+          pnlEl.textContent = (data.totalPnl >= 0 ? '+' : '') + '₹' + new Intl.NumberFormat('en-IN').format(data.totalPnl)
+          pnlEl.style.color = data.totalPnl >= 0 ? '#10B981' : '#EF4444'
+        }
+
+        const dpnlEl = document.getElementById('acct-daily-pnl')
+        if (dpnlEl) {
+          dpnlEl.textContent = (data.dailyPnl >= 0 ? '+' : '') + '₹' + new Intl.NumberFormat('en-IN').format(data.dailyPnl)
+          dpnlEl.style.color = data.dailyPnl >= 0 ? '#10B981' : '#EF4444'
+        }
+
+        const targetBar = document.getElementById('progress-target')
+        if (targetBar) targetBar.style.width = Math.min(100, data.profitTargetPct) + '%'
+
+        const drawdownBar = document.getElementById('progress-drawdown')
+        if (drawdownBar) {
+          const pct = Math.min(100, (parseFloat(data.drawdownPct) / (prev.maxDrawdown || 8)) * 100)
+          drawdownBar.style.width = pct + '%'
+        }
+
+        return updated
+      })
     })
 
     // RISK EVENTS
@@ -315,16 +363,13 @@ export default function TradingTerminalPage() {
           setShowFailModal(null)
           break
         case '1':
-          setSelectedInstrument('NIFTY')
-          setTvSymbol('NSE:NIFTY')
+          handleInstrumentChange('NIFTY')
           break
         case '2':
-          setSelectedInstrument('BANKNIFTY')
-          setTvSymbol('NSE:BANKNIFTY')
+          handleInstrumentChange('BANKNIFTY')
           break
         case '3':
-          setSelectedInstrument('MIDCAPNIFTY')
-          setTvSymbol('NSE:MIDCPNIFTY')
+          handleInstrumentChange('MIDCAPNIFTY')
           break
       }
     }
@@ -412,10 +457,7 @@ export default function TradingTerminalPage() {
 
   if (loadError) return <div style={{ color: 'red', textAlign: 'center', marginTop: 100 }}>{loadError}</div>
 
-  const handleInstrumentChange = (id, tv) => {
-    setSelectedInstrument(id)
-    setTvSymbol(tv)
-  }
+
 
   return (
     <div style={terminalStyle}>
