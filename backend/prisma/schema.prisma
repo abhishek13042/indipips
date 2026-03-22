@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -19,6 +18,7 @@ model User {
   panNumber           String?
   bankAccount         String?
   bankIfsc            String?
+  bankName            String?
   referralCode        String                @unique
   referredBy          String?
   walletBalance       BigInt                @default(0)
@@ -71,6 +71,7 @@ model Challenge {
   totalPnl             BigInt           @default(0)
   dailyPnl             BigInt           @default(0)
   daysTraded           Int              @default(0)
+  consistencyViolations Int             @default(0)
   phase                Int              @default(1)
   status               ChallengeStatus  @default(ACTIVE)
   failReason           String?
@@ -81,6 +82,9 @@ model Challenge {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   accountNodeId        String?          @unique
+  profitSplitPct       Float            @default(80.0)
+  isFunded             Boolean          @default(false)
+  lastConsistencyViolationDate DateTime?
   lossCount            Int              @default(0)
   totalTrades          Int              @default(0)
   winCount             Int              @default(0)
@@ -108,6 +112,8 @@ model Trade {
   createdAt     DateTime    @default(now())
   status        TradeStatus @default(OPEN)
   symbol        String
+  instrument    String?
+  tradeDate     DateTime?
   challenge     Challenge   @relation(fields: [challengeId], references: [id])
 }
 
@@ -135,7 +141,12 @@ model Payout {
   challengeId     String
   amountRequested BigInt
   amountAfterTds  BigInt
+  tdsAmount       BigInt       @default(0)
   profitSplit     Float
+  netPayoutAmount BigInt?
+  traderSharePct  Float        @default(80.0)
+  isFirstPayout   Boolean      @default(false)
+  feeRefund       BigInt?
   status          PayoutStatus @default(PENDING)
   adminId         String?
   bankReference   String?

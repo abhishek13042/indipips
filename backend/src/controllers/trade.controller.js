@@ -1,193 +1,357 @@
-const prisma = require('../utils/prisma');
-const { calculateBreach } = require('../utils/riskEngine');
-const { emitToUser } = require('../utils/socket');
-const brokerService = require('../services/broker.service');
+const {
+  validatePreTrade,
+  processTrade,
+  closeTrade,
+  emitTradeEvents,
+  getMarketStatus,
+} = require('../utils/riskEngine')
+const { query } = require('../utils/db')
+const {
+  addOpenTradeJob,
+  addCloseTradeJob,
+  getJobStatus,
+  getQueueStats,
+} = require('../queues/tradeQueue')
 
-/**
- * Open a new trade
- * POST /api/v1/trades/open
- */
+// ─────────────────────────────────────
+// OPEN TRADE
+// POST /api/v1/trades/open
+// ─────────────────────────────────────
 const openTrade = async (req, res) => {
   try {
-    const { challengeId, symbol, tradeType, quantity, entryPrice } = req.body;
-
-    if (!challengeId || !symbol || !tradeType || !quantity || !entryPrice) {
-      return res.status(400).json({ success: false, message: 'Missing required trade details.' });
-    }
-
-    const challenge = await prisma.challenge.findUnique({
-      where: { id: challengeId },
-    });
-
-    if (!challenge || challenge.status !== 'ACTIVE') {
-      return res.status(403).json({ success: false, message: 'Account is not active or suspended.' });
-    }
-
-    if (challenge.userId !== req.userId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to this account.' });
-    }
-
-    // Use Broker Service to place order
-    const trade = await brokerService.placeOrder(
-      req.userId,
+    const userId = req.user.id
+    const {
       challengeId,
-      symbol,
+      instrument,
       tradeType,
-      parseInt(quantity),
-      parseFloat(entryPrice)
-    );
+      quantity,
+      entryPrice,
+      orderType,
+    } = req.body
 
-    // Update total trades count
-    await prisma.challenge.update({
-      where: { id: challengeId },
-      data: { totalTrades: { increment: 1 } },
-    });
+    // Basic presence check
+    if (!challengeId || !instrument || !tradeType || !quantity || !entryPrice) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields.',
+      })
+    }
 
-    // Notify Frontend
-    emitToUser(req.userId, 'account_update', {
-      type: 'TRADE_OPENED',
+    // Step 1: Fast pre-validation
+    const preCheck = await validatePreTrade({
+      userId,
       challengeId,
-      symbol,
-    });
+      instrument,
+      quantity: parseInt(quantity),
+      tradeType: tradeType.toUpperCase(),
+    })
 
-    res.json({
-      success: true,
-      message: 'Trade opened successfully.',
-      data: {
-        id: trade.id,
-        symbol: trade.symbol,
-        entryPrice: Number(trade.entryPrice) / 100,
-      },
-    });
+    if (!preCheck.valid) {
+      return res.status(422).json({
+        success: false,
+        message: preCheck.message,
+        code: preCheck.code,
+        data: preCheck.data,
+      })
+    }
+
+    // Step 2: Add to queue (non-blocking)
+    try {
+      const job = await addOpenTradeJob({
+        userId,
+        challengeId,
+        instrument: instrument.toUpperCase(),
+        tradeType: tradeType.toUpperCase(),
+        quantity: parseInt(quantity),
+        entryPrice: Math.round(parseFloat(entryPrice) * 100),
+        orderType: orderType || 'MARKET',
+      })
+
+      return res.status(202).json({
+        success: true,
+        message: 'Order submitted! You will receive confirmation shortly.',
+        data: {
+          jobId: job.id,
+          status: 'QUEUED',
+          instrument: instrument.toUpperCase(),
+          tradeType: tradeType.toUpperCase(),
+          quantity: parseInt(quantity),
+          estimatedPrice: parseFloat(entryPrice),
+          socketEvent: 'order:confirmed',
+          queuedAt: new Date().toISOString(),
+        },
+      })
+    } catch (queueError) {
+      console.warn('⚠️ Queue unavailable, processing synchronously:', queueError.message)
+      
+      try {
+        const trade = await processTrade({
+          userId,
+          challengeId,
+          instrument: instrument.toUpperCase(),
+          tradeType: tradeType.toUpperCase(),
+          quantity: parseInt(quantity),
+          entryPrice: BigInt(Math.round(parseFloat(entryPrice) * 100)),
+          orderType: orderType || 'MARKET',
+        })
+        
+        return res.status(201).json({
+          success: true,
+          message: 'Order placed (sync mode)',
+          data: { trade },
+        })
+      } catch (tradeError) {
+        return res.status(422).json({
+          success: false,
+          message: tradeError.message,
+        })
+      }
+    }
   } catch (error) {
-    console.error('Open trade error:', error);
-    res.status(500).json({ success: false, message: 'Failed to open trade.' });
+    console.error('openTrade queue error:', error.message)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit order. Please try again.',
+    })
   }
-};
+}
 
-/**
- * Close an active trade
- * POST /api/v1/trades/close
- */
-const closeTrade = async (req, res) => {
+// ─────────────────────────────────────
+// CLOSE TRADE
+// POST /api/v1/trades/close
+// ─────────────────────────────────────
+const closeTrade_ctrl = async (req, res) => {
   try {
-    const { tradeId, exitPrice } = req.body;
+    const userId = req.user.id
+    const { tradeId, exitPrice } = req.body
 
     if (!tradeId || !exitPrice) {
-      return res.status(400).json({ success: false, message: 'Trade ID and exit price are required.' });
+      return res.status(400).json({
+        success: false,
+        message: 'tradeId and exitPrice are required.',
+      })
     }
 
-    const trade = await prisma.trade.findUnique({
-      where: { id: tradeId },
-      include: { challenge: true },
-    });
+    const job = await addCloseTradeJob({
+      userId,
+      tradeId,
+      exitPrice: Math.round(parseFloat(exitPrice) * 100),
+    })
 
-    if (!trade || trade.status !== 'OPEN') {
-      return res.status(404).json({ success: false, message: 'Open trade not found.' });
-    }
-
-    if (trade.userId !== req.userId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized.' });
-    }
-
-    // Use Broker Service to close order
-    const updatedTrade = await brokerService.closeOrder(tradeId, parseFloat(exitPrice));
-    const pnlBigInt = BigInt(updatedTrade.pnl);
-
-    // Update Challenge Balance
-    const newBalance = BigInt(trade.challenge.currentBalance) + pnlBigInt;
-    const updatedChallenge = await prisma.challenge.update({
-      where: { id: trade.challengeId },
-      data: {
-        currentBalance: newBalance,
-        totalPnl: { increment: pnlBigInt },
-        peakBalance: newBalance > BigInt(trade.challenge.peakBalance) ? newBalance : trade.challenge.peakBalance,
-        winCount: pnlBigInt > 0n ? { increment: 1 } : undefined,
-        lossCount: pnlBigInt <= 0n ? { increment: 1 } : undefined,
-      },
-    });
-
-    // Check for Breaches
-    const breachResult = calculateBreach(updatedChallenge, newBalance);
-    
-    if (breachResult.isBreached) {
-      await prisma.challenge.update({
-        where: { id: trade.challengeId },
-        data: {
-          status: 'FAILED',
-          failReason: breachResult.reason + ': ' + breachResult.details,
-        },
-      });
-      console.log(`❌ Account ${trade.challengeId} FAILED due to ${breachResult.reason}`);
-    }
-
-    // Notify Frontend
-    emitToUser(req.userId, 'account_update', {
-      type: pnlNum > 0 ? 'TRADE_WON' : 'TRADE_LOST',
-      challengeId: trade.challengeId,
-      newBalance: newBalance / 100,
-      isBreached: breachResult.isBreached,
-    });
-
-    res.json({
+    return res.status(202).json({
       success: true,
-      message: 'Trade closed successfully.',
+      message: 'Exit order submitted! Processing your position close.',
       data: {
-        pnl: pnlNum,
-        isBreached: breachResult.isBreached,
-        newBalance: newBalance / 100,
-        failReason: breachResult.isBreached ? breachResult.details : null
+        jobId: job.id,
+        status: 'QUEUED',
+        tradeId,
+        socketEvent: 'order:confirmed',
+        queuedAt: new Date().toISOString(),
       },
-    });
+    })
   } catch (error) {
-    console.error('Close trade error:', error);
-    res.status(500).json({ success: false, message: 'Failed to close trade.' });
+    console.error('closeTrade queue error:', error.message)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit exit order.',
+    })
   }
-};
+}
 
-/**
- * Get all active (open) trades for a challenge
- * GET /api/v1/trades/active/:challengeId?
- */
+// ─────────────────────────────────────
+// GET ACTIVE TRADES
+// GET /api/v1/trades/active
+// ─────────────────────────────────────
 const getActiveTrades = async (req, res) => {
   try {
-    const { challengeId } = req.params;
-    const where = {
-      userId: req.userId,
-      status: 'OPEN',
-    };
+    const userId = req.user.id
+    const { challengeId } = req.query
 
+    let queryText = 
+      `SELECT t.id, t.instrument,
+        t."tradeType", t.quantity,
+        t."entryPrice", t.pnl,
+        t."tradeDate", t."entryTime",
+        t.status, t."orderType",
+        t."challengeId"
+       FROM "Trade" t
+       WHERE t."userId" = $1
+       AND t.status = 'OPEN'`
+    
+    const params = [userId]
     if (challengeId) {
-      where.challengeId = challengeId;
+      queryText += ` AND t."challengeId" = $2`
+      params.push(challengeId)
+    }
+    queryText += ` ORDER BY t."entryTime" DESC`
+
+    const result = await query(queryText, params)
+
+    const trades = result.rows.map(t => ({
+      ...t,
+      entryPrice: Number(t.entryPrice) / 100,
+      pnl: Number(t.pnl) / 100,
+    }))
+
+    return res.status(200).json({
+      success: true,
+      message: 'Active trades fetched.',
+      data: {
+        trades,
+        count: trades.length,
+      },
+    })
+  } catch (error) {
+    console.error('getActiveTrades:', error.message)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch trades.',
+    })
+  }
+}
+
+// ─────────────────────────────────────
+// GET TRADE HISTORY
+// GET /api/v1/trades/history
+// ─────────────────────────────────────
+const getTradeHistory = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { challengeId, date, page = 1, limit = 50 } = req.query
+
+    if (!challengeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'challengeId is required.',
+      })
     }
 
-    const trades = await prisma.trade.findMany({
-      where,
-      include: {
-        challenge: true,
-      },
-      orderBy: {
-        entryTime: 'desc',
-      },
-    });
+    const offset = (page - 1) * limit
+    const params = [userId, challengeId]
+    let whereClause = `t."userId" = $1 AND t."challengeId" = $2 AND t.status = 'CLOSED'`
 
-    res.json({
+    if (date) {
+      params.push(date)
+      whereClause += ` AND t."tradeDate" = $${params.length}`
+    }
+
+    const tradesResult = await query(
+      `SELECT t.id, t.instrument,
+        t."tradeType", t.quantity,
+        t."entryPrice", t."exitPrice",
+        t.pnl, t."tradeDate",
+        t."entryTime", t."exitTime",
+        t."orderType"
+       FROM "Trade" t
+       WHERE ${whereClause}
+       ORDER BY t."exitTime" DESC
+       LIMIT $${params.length+1} 
+       OFFSET $${params.length+2}`,
+      [...params, limit, offset]
+    )
+
+    const countResult = await query(
+      `SELECT COUNT(*) as total,
+        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+        SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END) as losers,
+        SUM(pnl) as totalpnl
+       FROM "Trade" t
+       WHERE ${whereClause}`,
+      params
+    )
+
+    const stats = countResult.rows[0]
+    const total = parseInt(stats.total)
+    const winners = parseInt(stats.winners||0)
+
+    const trades = tradesResult.rows.map(t=>({
+      ...t,
+      entryPrice: Number(t.entryPrice)/100,
+      exitPrice: t.exitPrice ? Number(t.exitPrice)/100 : null,
+      pnl: Number(t.pnl)/100,
+    }))
+
+    return res.status(200).json({
       success: true,
-      data: trades.map((t) => ({
-        id: t.id,
-        challengeId: t.challengeId,
-        symbol: t.symbol,
-        tradeType: t.tradeType,
-        quantity: t.quantity,
-        entryPrice: Number(t.entryPrice) / 100,
-        entryTime: t.entryTime,
-        status: t.status,
-      })),
-    });
+      message: 'Trade history fetched.',
+      data: {
+        trades,
+        summary: {
+          totalTrades: total,
+          winningTrades: winners,
+          losingTrades: parseInt(stats.losers || 0),
+          totalPnl: Number(stats.totalpnl || 0) / 100,
+          winRate: total > 0 ? ((winners/total)*100).toFixed(1) : 0,
+        },
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total/limit),
+        },
+      },
+    })
   } catch (error) {
-    console.error('Get active trades error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch active trades.' });
+    console.error('getTradeHistory:', error.message)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch history.',
+    })
   }
-};
+}
 
-module.exports = { openTrade, closeTrade, getActiveTrades };
+// ─────────────────────────────────────
+// GET MARKET STATUS
+// GET /api/v1/trades/market-status
+// ─────────────────────────────────────
+const marketStatus = async (req, res) => {
+  const status = getMarketStatus()
+  const now = new Date()
+  const ist = new Date(now.getTime() + 5.5*60*60*1000)
+  const timeStr = ist.toISOString().split('T')[1].substring(0,8)
+  
+  return res.status(200).json({
+    success: true,
+    data: {
+      ...status,
+      currentISTTime: timeStr + ' IST',
+      serverTime: now.toISOString(),
+    },
+  })
+}
+
+// ─────────────────────────────────────
+// CHECK JOB STATUS
+// ─────────────────────────────────────
+const checkJobStatus = async (req, res) => {
+  try {
+    const { jobId } = req.params
+    const status = await getJobStatus(jobId)
+    
+    if (!status) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: status,
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to check job status.',
+    })
+  }
+}
+
+module.exports = {
+  openTrade,
+  closeTrade: closeTrade_ctrl,
+  getActiveTrades,
+  getTradeHistory,
+  marketStatus,
+  checkJobStatus,
+}

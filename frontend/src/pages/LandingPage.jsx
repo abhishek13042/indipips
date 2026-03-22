@@ -1,21 +1,25 @@
-import Navbar from '../components/Navbar'
-import Hero from '../components/Hero'
-import StatMarquee from '../components/StatMarquee'
-import HowItWorks from '../components/HowItWorks'
-import Pricing from '../components/Pricing'
-import WhyUs from '../components/WhyUs'
-import FAQ from '../components/FAQ'
-import Footer from '../components/Footer'
+import Navbar from '../components/landing/Navbar'
+import Hero from '../components/landing/Hero'
+import StatsTicker from '../components/landing/StatsTicker'
+import StatsBar from '../components/landing/StatsBar'
+import HowItWorks from '../components/landing/HowItWorks'
+import Pricing from '../components/landing/Pricing'
+import WhyUs from '../components/landing/WhyUs'
+import LeaderboardPreview from '../components/landing/LeaderboardPreview'
+import FAQ from '../components/landing/FAQ'
+import Footer from '../components/landing/Footer'
 
 function LandingPage() {
   return (
-    <div className="bg-[#050510] text-gray-200 min-h-screen">
+    <div className="min-h-screen bg-[#0A0F1E] text-[#F9FAFB] font-inter">
       <Navbar />
       <Hero />
-      <StatMarquee />
+      <StatsTicker />
+      <StatsBar />
       <HowItWorks />
       <Pricing />
       <WhyUs />
+      <LeaderboardPreview />
       <FAQ />
       <Footer />
     </div>

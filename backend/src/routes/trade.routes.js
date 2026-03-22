@@ -1,13 +1,20 @@
-const express = require('express');
-const router = express.Router();
-const tradeController = require('../controllers/trade.controller');
-const { protect } = require('../middleware/auth.middleware');
+const express = require('express')
+const router = express.Router()
+const { protect } = require('../middleware/auth.middleware')
+const {
+  openTrade,
+  closeTrade,
+  getActiveTrades,
+  getTradeHistory,
+  marketStatus,
+  checkJobStatus,
+} = require('../controllers/trade.controller')
 
-// All trade routes are protected
-router.use(protect);
+router.get('/market-status', marketStatus)
+router.get('/active', protect, getActiveTrades)
+router.get('/history', protect, getTradeHistory)
+router.get('/job/:jobId', protect, checkJobStatus)
+router.post('/open', protect, openTrade)
+router.post('/close', protect, closeTrade)
 
-router.get('/active/:challengeId?', tradeController.getActiveTrades);
-router.post('/open', tradeController.openTrade);
-router.post('/close', tradeController.closeTrade);
-
-module.exports = router;
+module.exports = router

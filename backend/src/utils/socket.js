@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 
 let io;
 
@@ -12,17 +13,43 @@ const init = (server) => {
   });
 
   io.on('connection', (socket) => {
-    console.log(`🔌 Socket connected: ${socket.id}`);
+    // Authenticate socket connection
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      socket.disconnect();
+      return;
+    }
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id || decoded.userId;
+      
+      // Join user-specific room for order confirmations
+      socket.join('user:' + userId);
+      console.log('👤 User joined room:', userId);
+      
+      // Existing: join challenge room
+      socket.on('join', ({ challengeId }) => {
+        if (challengeId) {
+          socket.join('challenge:' + challengeId);
+          console.log('📊 Challenge room joined:', challengeId);
+          socket.emit('joined', { challengeId, status: 'connected' });
+        }
+      });
 
-    // Join room based on userId for private updates
-    socket.on('join_room', (userId) => {
-      socket.join(userId);
-      console.log(`👤 User ${userId} joined room`);
-    });
+      socket.on('leave', ({ challengeId }) => {
+        if (challengeId) {
+          socket.leave('challenge:' + challengeId);
+        }
+      });
 
-    socket.on('disconnect', () => {
-      console.log(`❌ Socket disconnected: ${socket.id}`);
-    });
+      socket.on('disconnect', () => {
+        console.log('👤 User disconnected:', userId);
+      });
+    } catch (err) {
+      console.error('Socket auth failed:', err.message);
+      socket.disconnect();
+    }
   });
 
   return io;

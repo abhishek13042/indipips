@@ -48,7 +48,8 @@ const register = async (req, res) => {
 
   } catch (error) {
     console.error('Register error:', error);
-    res.status(error.message.includes('registered') ? 400 : 500).json({
+    const isConflict = error.message.includes('registered') || error.message.includes('already exists');
+    res.status(isConflict ? 409 : 500).json({
       success: false,
       message: error.message || 'Something went wrong. Please try again.'
     });

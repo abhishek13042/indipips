@@ -6,16 +6,19 @@ export default {
   ],
   theme: {
     extend: {
+      colors: {
+        primary: '#0A0F1E',
+        card: '#111827',
+        border: '#1F2937',
+        accent: '#10B981',
+        gold: '#F59E0B',
+        success: '#10B981',
+        danger: '#EF4444',
+        muted: '#6B7280',
+      },
       fontFamily: {
         inter: ['Inter', 'sans-serif'],
-        outfit: ['Outfit', 'sans-serif'],
       },
-      colors: {
-        midnight: 'rgb(var(--color-midnight) / <alpha-value>)',
-        'midnight-light': 'rgb(var(--color-midnight-light) / <alpha-value>)',
-        'indigo-glow': 'rgb(var(--color-indigo-glow) / <alpha-value>)',
-        'emerald-accent': 'rgb(var(--color-emerald-accent) / <alpha-value>)',
-      }
     },
   },
   plugins: [],

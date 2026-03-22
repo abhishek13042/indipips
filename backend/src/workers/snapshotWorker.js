@@ -27,12 +27,20 @@ const initSnapshotWorker = () => {
         // Calculate current equity (Realized + Unrealized)
         let currentEquity = Number(challenge.currentBalance);
         
-        // Add unrealized P&L from open trades
-        const unrealizedPnl = challenge.trades.reduce((sum, trade) => {
-          return sum + Number(trade.pnl);
-        }, 0);
+        // Add unrealized P&L from open trades using LIVE prices
+        let unrealizedPnl = 0n;
+        for (const trade of challenge.trades) {
+          const livePrice = priceFeed.getPrice(trade.symbol);
+          if (livePrice) {
+            const livePricePaise = BigInt(Math.round(Number(livePrice) * 100));
+            const tradePnlPaise = (livePricePaise - BigInt(trade.entryPrice)) * BigInt(trade.quantity);
+            unrealizedPnl += (trade.tradeType === 'BUY' ? tradePnlPaise : -tradePnlPaise);
+          } else {
+            unrealizedPnl += BigInt(trade.pnl || 0);
+          }
+        }
         
-        const finalEquity = currentEquity + unrealizedPnl;
+        const finalEquity = BigInt(challenge.currentBalance) + unrealizedPnl;
 
         // Save Snapshot
         await prisma.equitySnapshot.create({

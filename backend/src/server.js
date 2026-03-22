@@ -24,9 +24,42 @@ const analyticsRoutes = require('./routes/analytics.routes');
 
 const { initBreachScanner } = require('./workers/breachScanner');
 const { initSnapshotWorker } = require('./workers/snapshotWorker');
+const { initExpiryWorker } = require('./workers/expiryWorker');
+require('./workers/tradeWorker'); // Bull processing worker
+const { getPoolStats } = require('./utils/db');
+const { getCacheHealth } = require('./utils/cache.service');
+const { getQueueStats } = require('./queues/tradeQueue');
 const { handleStripeWebhook, handleRazorpayWebhook } = require('./controllers/webhook.controller');
 const upstoxFeed = require('./services/upstoxFeed.service');
 
+const {
+  securityHeaders,
+  sanitizeInput,
+  detectSuspiciousActivity,
+  requestSizeLimits,
+} = require('./middleware/security.middleware')
+
+const {
+  globalLimiter,
+  authLimiter,
+  otpLimiter,
+  tradeLimiter,
+  payoutLimiter,
+  adminLimiter,
+  kycLimiter,
+  webhookLimiter,
+} = require('./middleware/rateLimiter.middleware')
+
+const {
+  requestTracker,
+  getFullHealthReport,
+} = require('./utils/monitoring')
+
+const {
+  setServer,
+  setIO,
+  registerShutdownHandlers,
+} = require('./utils/gracefulShutdown')
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
@@ -37,6 +70,7 @@ socketIO.init(server);
 // Start Background Workers
 initBreachScanner();
 initSnapshotWorker();
+initExpiryWorker();
 
 // Note: upstoxFeed.connect() is called after a user successfully connects their
 // Upstox broker account. It is NOT started at server startup because it
@@ -47,19 +81,7 @@ app.post('/api/v1/webhooks/stripe', express.raw({ type: 'application/json' }), h
 app.post('/api/v1/webhooks/razorpay', express.raw({ type: '*/*' }), handleRazorpayWebhook);
 
 // ── Security Middleware ───────────────────────────
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://checkout.stripe.com"],
-      connectSrc: ["'self'", "https://api.upstox.com", "wss://api.upstox.com", "https://api.stripe.com", "https://api.razorpay.com"],
-      frameSrc: ["'self'", "https://checkout.stripe.com", "https://api.razorpay.com"],
-      imgSrc: ["'self'", "data:", "https://*.stripe.com", "https://*.razorpay.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-    },
-  },
-}));
+app.use(securityHeaders);
 
 // Trust Proxy for Production (Heroku/Nginx)
 app.set('trust proxy', 1);
@@ -69,43 +91,63 @@ app.use(cors({
   credentials: true
 }));
 
-// Global Rate Limiter
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 500,
-  message: { success: false, message: 'Too many requests, please try again later.' }
-});
+// Request tracking
+app.use(requestTracker)
 
-// Auth & Payment Specific Limiter (Stricter)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  message: { success: false, message: 'Too many sensitive requests. Security lockout engaged.' }
-});
-
-app.use('/api/', globalLimiter);
-app.use('/api/v1/auth/', authLimiter);
-app.use('/api/v1/payments/', authLimiter);
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body size limits
+app.use(express.json(requestSizeLimits.json))
+app.use(express.urlencoded(requestSizeLimits.urlencoded))
 app.use(cookieParser());
 app.use(passport.initialize());
 
+// Input sanitization
+app.use(sanitizeInput)
+
+// Suspicious activity detection
+app.use(detectSuspiciousActivity)
+
+// Global rate limiter
+app.use(globalLimiter)
+
+app.use(morgan('dev'));
+
 // ── Routes ──────────────────────────────────────────
-app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', authLimiter, authRoutes);
+app.use('/api/v1/auth/resend-otp', otpLimiter);
+app.use('/api/v1/auth/verify', otpLimiter);
+
 app.use('/api/v1/plans', planRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/challenges', challengeRoutes);
+
+app.use('/api/v1/trades', tradeLimiter, tradeRoutes);
+app.use('/api/v1/payouts', payoutLimiter, payoutRoutes);
+app.use('/api/v1/kyc', kycLimiter, kycRoutes);
+app.use('/api/v1/admin', adminLimiter, adminRoutes);
+app.use('/api/v1/webhooks', webhookLimiter);
+
 app.use('/api/v1/payments', paymentRoutes);
-app.use('/api/v1/trades', tradeRoutes);
-app.use('/api/v1/kyc', kycRoutes);
-app.use('/api/v1/admin', adminRoutes);
-app.use('/api/v1/payouts', payoutRoutes);
 app.use('/api/v1/upstox', upstoxRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 
 // ── Health Check ────────────────────────────────────
+app.get('/api/v1/health', async (req, res) => {
+  try {
+    const report = await getFullHealthReport()
+    const statusCode = 
+      report.status === 'healthy' ? 200
+      : report.status === 'degraded' ? 207
+      : 503
+    return res.status(statusCode).json(report)
+  } catch (error) {
+    return res.status(503).json({
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString(),
+    })
+  }
+})
+
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -119,23 +161,35 @@ app.get('/', (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.originalUrl} not found`
-  });
-});
+    message: 'Route not found: ' + 
+      req.method + ' ' + req.path,
+  })
+})
 
 // ── Global Error Handler ────────────────────────────
-// Catches all unhandled async errors — prevents stack traces leaking to users
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('❌ Unhandled Error:', err.message);
+  console.error('🚨 Unhandled route error:', {
+    message: err.message,
+    path: req.path,
+    method: req.method,
+    userId: req.user?.id,
+    stack: process.env.NODE_ENV === 
+      'development' ? err.stack : undefined,
+  })
+
+  // Never expose internal errors to client
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || 'An unexpected error occurred.'
-  });
-});
+    message: process.env.NODE_ENV === 
+      'production'
+      ? 'An unexpected error occurred.'
+      : err.message,
+    requestId: req.headers['x-request-id'],
+  })
+})
 
 // ── Start Server ────────────────────────────────────
-server.listen(PORT, () => {
+const httpServer = server.listen(PORT, () => {
   console.log(`
   ██╗███╗   ██╗██████╗ ██╗██████╗ ██╗██████╗ ███████╗
   ██║████╗  ██║██╔══██╗██║██╔══██╗██║██╔══██╗██╔════╝
@@ -150,5 +204,14 @@ server.listen(PORT, () => {
   console.log(`🔐 Auth routes: http://localhost:${PORT}/api/v1/auth`);
   console.log(`💳 Payment routes: http://localhost:${PORT}/api/v1/payments`);
 });
+
+// Register with graceful shutdown
+setServer(httpServer)
+
+// Initialize Socket.io
+setIO(socketIO.getIO ? socketIO.getIO() : null)
+
+// Register shutdown handlers
+registerShutdownHandlers()
 
 module.exports = app;

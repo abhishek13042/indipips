@@ -1,421 +1,410 @@
-import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Check, ChevronRight, Info, ShieldCheck, CreditCard, Wallet, BadgePercent } from 'lucide-react'
-import DashboardLayout from '../layouts/DashboardLayout'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Target, TrendingUp as TrendingUpIcon, Zap, Lock, Shield, ArrowLeft } from 'lucide-react'
 import api from '../api'
-import { formatRupee } from '../utils/format'
-import { 
-  challengeTypes, 
-  models, 
-  accountSizes, 
-  tradingRules, 
-  platforms, 
-  paymentMethods 
-} from '../data/ChallengePlans'
+import useAuthStore from '../stores/authStore'
+import Sidebar from '../components/dashboard/Sidebar'
+import TopBar from '../components/dashboard/TopBar'
+import BottomNav from '../components/dashboard/BottomNav'
 
-function BuyChallengePage() {
+const colors = {
+  bg: '#060B14',
+  surface: '#0D1420',
+  surface2: '#131D2E',
+  card: '#111827',
+  border: '#1E2D40',
+  accent: '#2563EB',
+  accent2: '#1D4ED8',
+  gold: '#F59E0B',
+  success: '#10B981',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  text: '#F1F5F9',
+  text2: '#94A3B8',
+  text3: '#475569'
+}
+
+const formatINR = (paise) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(paise / 100)
+}
+
+const BuyChallengePage = () => {
+  const [plans, setPlans] = useState([])
+  const [selectedType, setSelectedType] = useState('ONE_STEP')
+  const [selectedPlan, setSelectedPlan] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  const { user } = useAuthStore()
   const navigate = useNavigate()
-  
-  // Selection State
-  const [selectedType, setSelectedType] = useState('TWO_STEP')
-  const [selectedModel, setSelectedModel] = useState('IND_PIPS')
-  const [selectedSize, setSelectedSize] = useState(accountSizes[4]) // ₹1 Crore default
-  const [profitTarget, setProfitTarget] = useState('8')
-  const [swapFree, setSwapFree] = useState('NO')
-  const [selectedPlatform, setSelectedPlatform] = useState('MT5')
-  const [paymentMethod, setPaymentMethod] = useState('CARD')
-  
-  // UI State
-  const [coupon, setCoupon] = useState('')
-  const [termsAgreed, setTermsAgreed] = useState({
-    use: false,
-    correct: false,
-    tcs: false,
-    resident: false
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    // Fetch all plans
+    api.get('/plans')
+      .then(res => {
+        setPlans(res.data.data || [])
+        setIsLoading(false)
+        
+        // Auto select from URL param
+        const planId = searchParams.get('planId')
+        if (planId) {
+          const plan = res.data.data.find(p => p.id === planId)
+          if (plan) {
+            setSelectedPlan(plan)
+            setSelectedType(plan.type || plan.planType || plan.challengeType || 'ONE_STEP')
+          }
+        }
+      })
+      .catch(() => setIsLoading(false))
+  }, [searchParams])
+
+  const filteredPlans = plans.filter(p => {
+    const planType = p.type || p.planType || p.challengeType
+    return planType === selectedType
   })
-  const [loading, setLoading] = useState(false)
 
-  // Calcs
-  const totalPrice = useMemo(() => {
-    let price = selectedSize.price;
-    // Apply swap-free logic
-    if (swapFree === 'YES') {
-      price = price * 1.1; // +10%
-    }
-    // Add platform extra
-    const plat = platforms.find(p => p.id === selectedPlatform);
-    if (plat) price += plat.extra;
+  // Calculate totals for selected plan
+  const baseAmount = selectedPlan ? selectedPlan.challengeFee / 100 : 0
+  const gstAmount = baseAmount * 0.18
+  const totalAmount = baseAmount + gstAmount
 
-    return price;
-  }, [selectedSize, swapFree, selectedPlatform])
-
-  const handlePurchase = async () => {
-    setLoading(true)
+  const handlePayment = async () => {
+    if (!selectedPlan) return
+    setPaymentLoading(true)
+    setError(null)
+    
     try {
-      const payload = {
-        challengeType: selectedType,
-        model: selectedModel,
-        accountSize: selectedSize.numericValue,
-        profitTarget,
-        swapFree: swapFree === 'YES',
-        platform: selectedPlatform,
-        paymentMethod,
-        coupon
-      };
-      
-      const res = await api.post('/payments/create-checkout', payload)
-      if (res.data?.data?.url) {
-        window.location.href = res.data.data.url
+      // Create Razorpay order
+      const orderRes = await api.post('/payments/create-checkout', { planId: selectedPlan.id })
+      const { orderId, totalAmount: totalPaisa, razorpayKeyId, planName } = orderRes.data.data
+
+      // Load Razorpay script
+      const script = document.createElement('script')
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+      script.onload = () => {
+        const options = {
+          key: razorpayKeyId,
+          amount: totalPaisa,
+          currency: 'INR',
+          name: 'Indipips',
+          description: planName + ' Challenge',
+          order_id: orderId,
+          prefill: {
+            name: user?.fullName,
+            email: user?.email,
+            contact: user?.phone
+          },
+          theme: {
+            color: colors.accent
+          },
+          handler: async (response) => {
+            // Payment successful
+            await verifyPayment(response)
+          },
+          modal: {
+            ondismiss: () => {
+              setPaymentLoading(false)
+            }
+          }
+        }
+        
+        const rzp = new window.Razorpay(options)
+        rzp.on('payment.failed', (response) => {
+          navigate('/payment/failed?reason=' + encodeURIComponent(response.error.description))
+        })
+        rzp.open()
       }
+      script.onerror = () => {
+        setError('Failed to load Razorpay SDK')
+        setPaymentLoading(false)
+      }
+      document.body.appendChild(script)
+      
     } catch (err) {
-      console.error('Checkout error:', err)
-      alert('Checkout failed. Please try again or contact support.')
-    } finally {
-      setLoading(false)
+      setError(err.response?.data?.message || 'Failed to create order')
+      setPaymentLoading(false)
     }
   }
 
-  const allTermsChecked = Object.values(termsAgreed).every(v => v === true)
+  const verifyPayment = async (response) => {
+    try {
+      await api.post('/payments/verify', {
+        razorpayOrderId: response.razorpay_order_id,
+        razorpayPaymentId: response.razorpay_payment_id,
+        razorpaySignature: response.razorpay_signature
+      })
+      navigate('/payment/success?plan=' + encodeURIComponent(selectedPlan.name))
+    } catch (err) {
+      navigate('/payment/failed?reason=verification_failed')
+    }
+  }
+
+  // Helper for rules list
+  const renderRules = (type) => {
+    if (type === 'ONE_STEP') return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 8% Profit Target</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 4% Daily Loss</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 8% Max Drawdown</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 45 Days</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
+      </div>
+    )
+    if (type === 'TWO_STEP') return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Phase 1: 8% Target</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Phase 2: 5% Target</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 5% Daily Loss</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 60 Days</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
+      </div>
+    )
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px', fontSize: '12px', color: colors.text2 }}>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> No Profit Target</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Instant Funding</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 3% Daily Loss</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 5% Max Drawdown</div>
+        <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% Split</div>
+      </div>
+    )
+  }
 
   return (
-    <DashboardLayout>
-      <div className="max-w-[1400px] mx-auto pb-20">
-        
-        {/* Page Header */}
-        <div className="flex items-center gap-3 mb-8">
-           <div className="w-10 h-10 rounded-lg bg-white shadow-sm border border-slate-200 flex items-center justify-center">
-              <div className="w-5 h-5 bg-black text-white rounded flex flex-col items-center justify-center text-[10px] font-black leading-none">IP</div>
-           </div>
-           <span className="text-slate-400 font-medium">IndiPips®</span>
-           <span className="text-slate-200">|</span>
-           <h1 className="text-3xl font-bold text-slate-900">New Challenge</h1>
-        </div>
+    <div style={{ backgroundColor: colors.bg, minHeight: '100vh', display: 'flex', fontFamily: "'Inter', sans-serif" }}>
+      <div className="desktop-only"><Sidebar /></div>
+      
+      <div className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
+        <TopBar />
 
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          
-          {/* LEFT: Selection Area (Step 2 & 3) */}
-          <div className="flex-1 space-y-8 w-full">
+        <div style={{ padding: '32px', flex: 1 }}>
+          <div style={{ marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Buy a Challenge</h1>
+            <p style={{ fontSize: '16px', color: colors.text2 }}>Choose your account size and start your funded trading journey</p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', lg: { flexDirection: 'row' }, gap: '32px', alignItems: 'flex-start' }}>
             
-            {/* Challenge Type */}
-            <section>
-               <h3 className="text-sm font-bold text-slate-900 mb-1">Challenge Type</h3>
-               <p className="text-xs text-slate-500 mb-4">Choose the type of challenge you want to take</p>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {challengeTypes.map(type => (
-                    <button 
-                      key={type.id}
-                      onClick={() => setSelectedType(type.id)}
-                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
-                         selectedType === type.id 
-                         ? 'border-[#3b66f5] bg-blue-50/30' 
-                         : 'border-slate-100 bg-white hover:border-slate-200'
-                      }`}
-                    >
-                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedType === type.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
-                          {selectedType === type.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
-                       </div>
-                       <span className={`font-bold ${selectedType === type.id ? 'text-slate-900' : 'text-slate-600'}`}>
-                         {type.label}
-                       </span>
-                    </button>
-                  ))}
-               </div>
-            </section>
-
-            {/* Model */}
-            <section>
-               <h3 className="text-sm font-bold text-slate-900 mb-1">Model</h3>
-               <p className="text-xs text-slate-500 mb-4">Choose the trading model</p>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {models.map(m => (
-                    <button 
-                      key={m.id}
-                      onClick={() => setSelectedModel(m.id)}
-                      className={`flex items-center gap-4 px-6 py-5 rounded-xl border-2 transition-all text-left group ${
-                         selectedModel === m.id 
-                         ? 'border-[#3b66f5] bg-blue-50/30' 
-                         : 'border-slate-100 bg-white hover:border-slate-200'
-                      }`}
-                    >
-                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedModel === m.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
-                          {selectedModel === m.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
-                       </div>
-                       <div>
-                          <p className={`font-bold ${selectedModel === m.id ? 'text-slate-900' : 'text-slate-600'}`}>{m.label}</p>
-                          <p className="text-[11px] text-slate-500">{m.desc}</p>
-                       </div>
-                    </button>
-                  ))}
-               </div>
-            </section>
-
-            {/* Customise Trading Rules */}
-            <section className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-               <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-white rounded-lg shadow-sm">
-                    <BadgePercent className="text-blue-500" size={18} />
+            {/* LEFT SIDE: PlANS SELECTION */}
+            <div style={{ flex: 1, width: '100%' }}>
+              
+              {/* TABS */}
+              <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '16px', marginBottom: '24px' }}>
+                <div 
+                  onClick={() => { setSelectedType('ONE_STEP'); setSelectedPlan(null); }}
+                  style={{
+                    backgroundColor: selectedType === 'ONE_STEP' ? 'rgba(37,99,235,0.15)' : colors.surface,
+                    border: `1px solid ${selectedType === 'ONE_STEP' ? colors.accent : colors.border}`,
+                    borderRadius: '12px', padding: '16px 24px', cursor: 'pointer', minWidth: '200px',
+                    color: selectedType === 'ONE_STEP' ? 'white' : colors.text2,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>
+                    <Target size={18} color={selectedType === 'ONE_STEP' ? colors.accent : colors.text2} /> 1-Step Challenge
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Customise Trading Rules</h3>
-                    <p className="text-[11px] text-slate-500">Adjust your challenge parameters to match your trading style</p>
-                  </div>
-               </div>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Profit Target */}
-                  <div>
-                    <p className="text-xs font-bold text-slate-700 mb-3">Profit Target</p>
-                    <p className="text-[10px] text-slate-500 mb-3">Choose options for profit target</p>
-                    <div className="flex gap-2 p-1 bg-white rounded-lg border border-slate-200">
-                       {tradingRules.profitTarget.map(rule => (
-                         <button 
-                           key={rule.id}
-                           onClick={() => setProfitTarget(rule.id)}
-                           className={`flex-1 py-2 px-3 rounded-md text-xs font-bold transition-all flex justify-between items-center ${
-                             profitTarget === rule.id ? 'bg-slate-100 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                           }`}
-                         >
-                            <span>{rule.label}</span>
-                            <span className={`text-[9px] ${rule.price === 0 ? 'text-slate-400 font-normal' : 'text-blue-600'}`}>
-                               {rule.price === 0 ? 'Default' : formatRupee(rule.price)}
-                            </span>
-                         </button>
-                       ))}
-                    </div>
-                  </div>
-
-                  {/* Swap Free */}
-                  <div>
-                    <p className="text-xs font-bold text-slate-700 mb-3">Swap Free</p>
-                    <p className="text-[10px] text-slate-500 mb-3">Choose options for swap free</p>
-                    <div className="flex gap-2 p-1 bg-white rounded-lg border border-slate-200">
-                       {tradingRules.swapFree.map(rule => (
-                         <button 
-                           key={rule.id}
-                           onClick={() => setSwapFree(rule.id)}
-                           className={`flex-1 py-2 px-3 rounded-md text-xs font-bold transition-all flex justify-between items-center ${
-                             swapFree === rule.id ? 'bg-slate-100 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                           }`}
-                         >
-                            <span>{rule.label}</span>
-                            <span className={`text-[9px] ${rule.price === 0 ? 'text-slate-400 font-normal' : 'text-blue-600'}`}>
-                               {rule.price === 0 ? 'Default' : rule.labelExtra || formatRupee(rule.price)}
-                            </span>
-                         </button>
-                       ))}
-                    </div>
-                  </div>
-               </div>
-            </section>
-
-            {/* Account Size */}
-            <section>
-               <h3 className="text-sm font-bold text-slate-900 mb-1">Account Size</h3>
-               <p className="text-xs text-slate-500 mb-4">Choose your preferred account size</p>
-               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {accountSizes.map(size => (
-                    <button 
-                      key={size.id}
-                      onClick={() => setSelectedSize(size)}
-                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
-                         selectedSize.id === size.id 
-                         ? 'border-[#3b66f5] bg-blue-50/30' 
-                         : 'border-slate-100 bg-white hover:border-slate-200'
-                      }`}
-                    >
-                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedSize.id === size.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
-                          {selectedSize.id === size.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
-                       </div>
-                       <span className={`font-bold whitespace-nowrap ${selectedSize.id === size.id ? 'text-slate-900' : 'text-slate-600'}`}>
-                         {size.label}
-                       </span>
-                    </button>
-                  ))}
-               </div>
-            </section>
-
-            {/* Trading Platform */}
-            <section>
-               <h3 className="text-sm font-bold text-slate-900 mb-1">Trading Platform</h3>
-               <p className="text-xs text-slate-500 mb-4">Choose your preferred trading platform</p>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {platforms.map(plat => (
-                    <button 
-                      key={plat.id}
-                      onClick={() => setSelectedPlatform(plat.id)}
-                      className={`flex items-center gap-3 px-6 py-4 rounded-xl border-2 transition-all text-left ${
-                         selectedPlatform === plat.id 
-                         ? 'border-[#3b66f5] bg-blue-50/30' 
-                         : 'border-slate-100 bg-white hover:border-slate-200'
-                      }`}
-                    >
-                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedPlatform === plat.id ? 'border-[#3b66f5]' : 'border-slate-300'}`}>
-                          {selectedPlatform === plat.id && <div className="w-2.5 h-2.5 rounded-full bg-[#3b66f5]" />}
-                       </div>
-                       <div className="flex-1 flex justify-between items-center">
-                          <span className={`font-bold ${selectedPlatform === plat.id ? 'text-slate-900' : 'text-slate-600'}`}>
-                           {plat.label}
-                          </span>
-                          {plat.extra > 0 && <span className="text-[9px] text-blue-600 font-bold">+{formatRupee(plat.extra)}</span>}
-                       </div>
-                    </button>
-                  ))}
-               </div>
-            </section>
-
-          </div>
-
-          {/* RIGHT: Order Summary (Step 4) */}
-          <div className="w-full lg:w-[400px] lg:sticky lg:top-10 space-y-6">
-             
-             {/* Billing Details Accordion Placeholder */}
-             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <div className="flex justify-between items-center text-slate-900 mb-0">
-                  <h3 className="text-sm font-bold">Billing Details</h3>
-                  <ChevronRight size={18} className="text-slate-400 rotate-90" />
+                  <div style={{ fontSize: '12px', color: selectedType === 'ONE_STEP' ? colors.accent : colors.text3, fontWeight: 600 }}>Most Popular</div>
+                  <div style={{ fontSize: '13px', marginTop: '8px' }}>Hit 8% target in 45 days</div>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">Enter your billing information for the challenge purchase</p>
-             </div>
 
-             {/* Coupon */}
-             <div className="space-y-2">
-                <h3 className="text-sm font-bold text-slate-900">Coupon Code</h3>
-                <p className="text-[11px] text-slate-500">Enter a coupon code to get a discount on your challenge</p>
-                <div className="flex gap-2">
-                   <input 
-                      type="text" 
-                      value={coupon}
-                      onChange={(e) => setCoupon(e.target.value)}
-                      placeholder="Enter coupon code"
-                      className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                   />
-                   <button className="px-5 py-2.5 bg-slate-50 text-slate-400 font-bold text-xs rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">Apply</button>
+                <div 
+                  onClick={() => { setSelectedType('TWO_STEP'); setSelectedPlan(null); }}
+                  style={{
+                    backgroundColor: selectedType === 'TWO_STEP' ? 'rgba(37,99,235,0.15)' : colors.surface,
+                    border: `1px solid ${selectedType === 'TWO_STEP' ? colors.accent : colors.border}`,
+                    borderRadius: '12px', padding: '16px 24px', cursor: 'pointer', minWidth: '200px',
+                    color: selectedType === 'TWO_STEP' ? 'white' : colors.text2,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>
+                    <TrendingUpIcon size={18} color={selectedType === 'TWO_STEP' ? colors.accent : colors.text2} /> 2-Step Challenge
+                  </div>
+                  <div style={{ fontSize: '12px', color: selectedType === 'TWO_STEP' ? colors.accent : colors.success, fontWeight: 600 }}>Best Value</div>
+                  <div style={{ fontSize: '13px', marginTop: '8px' }}>Lower fees, two phases</div>
                 </div>
-             </div>
 
-             {/* Summary Card */}
-             <div className="bg-[#f8fafc] rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="bg-white border-b border-slate-100 p-5">
-                   <h3 className="text-lg font-bold text-slate-900">Order Summary</h3>
+                <div 
+                  onClick={() => { setSelectedType('ZERO_STEP'); setSelectedPlan(null); }}
+                  style={{
+                    backgroundColor: selectedType === 'ZERO_STEP' ? 'rgba(37,99,235,0.15)' : colors.surface,
+                    border: `1px solid ${selectedType === 'ZERO_STEP' ? colors.accent : colors.border}`,
+                    borderRadius: '12px', padding: '16px 24px', cursor: 'pointer', minWidth: '200px',
+                    color: selectedType === 'ZERO_STEP' ? 'white' : colors.text2,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>
+                    <Zap size={18} color={selectedType === 'ZERO_STEP' ? colors.accent : colors.text2} /> Instant Funded
+                  </div>
+                  <div style={{ fontSize: '12px', color: selectedType === 'ZERO_STEP' ? colors.accent : colors.gold, fontWeight: 600 }}>No Evaluation</div>
+                  <div style={{ fontSize: '13px', marginTop: '8px' }}>Get funded immediately</div>
                 </div>
-                
-                <div className="p-5 space-y-4">
-                   <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{selectedSize.displayValue} — {challengeTypes.find(t => t.id === selectedType)?.label} {models.find(m => m.id === selectedModel)?.label}</p>
-                        <p className="text-[11px] text-slate-500">Platform: {selectedPlatform}</p>
+              </div>
+
+              {/* CARDS */}
+              {isLoading ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  {[1, 2, 3, 4, 5].map(i => <div key={i} className="skeleton" style={{ height: '300px', borderRadius: '16px' }}></div>)}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '16px', padding: '4px' }}>
+                  {filteredPlans.map(plan => {
+                    const isSelected = selectedPlan?.id === plan.id
+                    const isPro = plan.name?.toLowerCase().includes('pro')
+                    const planFee = plan.challengeFee / 100
+                    const planGST = planFee * 0.18
+                    
+                    return (
+                      <div
+                        key={plan.id}
+                        onClick={() => setSelectedPlan(plan)}
+                        style={{
+                          minWidth: '220px',
+                          backgroundColor: isSelected ? 'rgba(37,99,235,0.08)' : colors.surface,
+                          border: `2px solid ${isSelected ? colors.accent : (isPro ? colors.gold : colors.border)}`,
+                          borderRadius: '16px',
+                          padding: '24px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          boxShadow: isSelected ? `0 0 20px rgba(37,99,235,0.2)` : 'none',
+                          transform: isSelected ? 'translateY(-4px)' : 'translateY(0)',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.borderColor = colors.accent
+                            e.currentTarget.style.transform = 'translateY(-2px)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.borderColor = isPro ? colors.gold : colors.border
+                            e.currentTarget.style.transform = 'translateY(0)'
+                          }
+                        }}
+                      >
+                        {isPro && (
+                          <div style={{
+                            position: 'absolute', top: '-12px', left: '50%', transform: 'translateX(-50%)',
+                            backgroundColor: colors.gold, color: colors.bg, fontSize: '11px', fontWeight: 'bold',
+                            padding: '4px 12px', borderRadius: '999px', whiteSpace: 'nowrap'
+                          }}>
+                            MOST POPULAR
+                          </div>
+                        )}
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: colors.text2, textTransform: 'uppercase', marginBottom: '8px' }}>
+                          {plan.name}
+                        </div>
+                        <div style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '24px' }}>
+                          {formatINR(plan.accountSize)}
+                        </div>
+
+                        <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '20px' }}>
+                          <div style={{ fontSize: '24px', fontWeight: 'bold', color: colors.accent }}>
+                            {formatINR(plan.challengeFee)}
+                          </div>
+                          <div style={{ fontSize: '12px', color: colors.text2, marginTop: '4px' }}>
+                            + 18% GST ({formatINR(plan.challengeFee * 0.18)})
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'white', marginTop: '4px', fontWeight: 600 }}>
+                            = {formatINR(plan.challengeFee * 1.18)} total
+                          </div>
+                          <div style={{ fontSize: '12px', color: colors.success, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <ArrowLeft size={12} /> Fee refunded with first payout
+                          </div>
+                        </div>
+
+                        {renderRules(selectedType)}
                       </div>
-                      <span className="text-sm font-bold text-slate-900">{formatRupee(selectedSize.price)}</span>
-                   </div>
-
-                   {swapFree === 'YES' && (
-                     <div className="flex justify-between items-center text-[11px] text-blue-600 font-bold">
-                        <span>Swap Free Option (+10%)</span>
-                        <span>{formatRupee(selectedSize.price * 0.1)}</span>
-                     </div>
-                   )}
-
-                   <div className="h-px bg-slate-100 my-2"></div>
-
-                   <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Subtotal</span>
-                      <span className="font-bold text-slate-900">{formatRupee(totalPrice)}</span>
-                   </div>
-
-                   <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">GST (18%)</span>
-                      <span className="font-bold text-slate-900">{formatRupee(totalPrice * 0.18)}</span>
-                   </div>
-
-                   <div className="h-px bg-slate-200 my-2"></div>
-
-                   <div className="flex justify-between items-center">
-                      <span className="text-xl font-bold text-slate-900">Total Amount</span>
-                      <span className="text-2xl font-black text-[#3b66f5]">{formatRupee(totalPrice * 1.18)}</span>
-                   </div>
-
-                   {/* Terms Checkboxes */}
-                   <div className="space-y-3 pt-4">
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input type="checkbox" checked={termsAgreed.all} onChange={() => setTermsAgreed(prev => ({...prev, use: !prev.use, correct: !prev.correct, tcs: !prev.tcs, resident: !prev.resident}))} className="hidden" />
-                        <div onClick={() => setTermsAgreed(p => ({...p, use: !p.use}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.use ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                           {termsAgreed.use && <Check size={12} className="text-white" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[11px] leading-relaxed text-slate-600">I have read and agreed to the <a href="#" className="text-blue-600 hover:underline">Terms of Use</a>.</span>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <div onClick={() => setTermsAgreed(p => ({...p, correct: !p.correct}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.correct ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                           {termsAgreed.correct && <Check size={12} className="text-white" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[11px] leading-relaxed text-slate-600">All information provided is correct and matches government-issued ID.</span>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <div onClick={() => setTermsAgreed(p => ({...p, tcs: !p.tcs}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.tcs ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                           {termsAgreed.tcs && <Check size={12} className="text-white" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[11px] leading-relaxed text-slate-600">I have read and agree with the <a href="#" className="text-blue-600 hover:underline">Terms & Conditions</a>.</span>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <div onClick={() => setTermsAgreed(p => ({...p, resident: !p.resident}))} className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${termsAgreed.resident ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                           {termsAgreed.resident && <Check size={12} className="text-white" strokeWidth={4} />}
-                        </div>
-                        <span className="text-[11px] leading-relaxed text-slate-600">I confirm that I am not a U.S. citizen or resident.</span>
-                      </label>
-                   </div>
+                    )
+                  })}
                 </div>
-             </div>
+              )}
+            </div>
 
-             {/* Payment Methods */}
-             <div className="space-y-4">
-                <h3 className="text-sm font-bold text-slate-900">Select payment method</h3>
-                <div className="space-y-2">
-                   {paymentMethods.map(method => (
-                     <button 
-                        key={method.id}
-                        onClick={() => setPaymentMethod(method.id)}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                          paymentMethod === method.id ? 'border-blue-600 bg-blue-50/20' : 'border-slate-100 bg-white hover:border-slate-200'
-                        }`}
-                     >
-                        <div className="flex items-center gap-3">
-                           <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${paymentMethod === method.id ? 'border-blue-600' : 'border-slate-300'}`}>
-                              {paymentMethod === method.id && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
-                           </div>
-                           <span className="text-xs font-bold text-slate-900">{method.label}</span>
-                        </div>
-                        <div className="flex gap-2">
-                           {method.icons.map(icon => (
-                             <div key={icon} className="h-5 w-8 bg-slate-100 rounded flex items-center justify-center text-[8px] font-black text-slate-400">
-                                {icon}
-                             </div>
-                           ))}
-                        </div>
-                     </button>
-                   ))}
+            {/* RIGHT SIDE: ORDER SUMMARY */}
+            <div style={{ 
+              width: '100%', maxWidth: '340px', 
+              backgroundColor: colors.surface, border: `1px solid ${colors.border}`, 
+              borderRadius: '16px', padding: '28px',
+              position: 'sticky', top: '100px'
+            }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'white', marginBottom: '24px' }}>Order Summary</h2>
+              
+              {!selectedPlan ? (
+                <div style={{ color: colors.text3, fontSize: '14px', textAlign: 'center', padding: '40px 0' }}>
+                  Please select a plan to view summary
                 </div>
-             </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', color: colors.text2, fontSize: '14px' }}>
+                    <span>{selectedPlan.name} Challenge</span>
+                    <span>{formatINR(selectedPlan.challengeFee)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', color: colors.text2, fontSize: '14px' }}>
+                    <span>GST (18%)</span>
+                    <span>{formatINR(selectedPlan.challengeFee * 0.18)}</span>
+                  </div>
+                  
+                  <div style={{ height: '1px', backgroundColor: colors.border, marginBottom: '20px' }}></div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', fontWeight: 'bold' }}>
+                    <span style={{ color: 'white', fontSize: '16px' }}>Total Amount</span>
+                    <span style={{ color: colors.accent, fontSize: '20px' }}>{formatINR(selectedPlan.challengeFee * 1.18)}</span>
+                  </div>
 
-             <button 
-                onClick={handlePurchase}
-                disabled={!allTermsChecked || loading}
-                className={`w-full py-4 rounded-xl font-black text-sm tracking-wider transition-all shadow-lg ${
-                  allTermsChecked && !loading
-                  ? 'bg-[#3b66f5] text-white hover:bg-blue-600 hover:-translate-y-0.5' 
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                }`}
-             >
-                {loading ? 'PROCESSING...' : 'CONTINUE TO PAYMENT'}
-             </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px', color: colors.text2, marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Instant account activation</div>
+                    <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> GST invoice included</div>
+                    <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> Fee refunded with first payout</div>
+                    <div style={{ display: 'flex', gap: '8px' }}><span>✓</span> 80% profit split</div>
+                  </div>
 
+                  {error && (
+                    <div style={{ color: colors.danger, fontSize: '13px', marginBottom: '16px', textAlign: 'center', backgroundColor: 'rgba(239,68,68,0.1)', padding: '8px', borderRadius: '8px' }}>
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handlePayment}
+                    disabled={paymentLoading}
+                    style={{
+                      width: '100%', height: '52px',
+                      backgroundColor: colors.accent,
+                      color: 'white', fontSize: '16px', fontWeight: 'bold',
+                      border: 'none', borderRadius: '12px',
+                      cursor: paymentLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex', justifyContent: 'center', alignItems: 'center',
+                      transition: 'background-color 0.2s',
+                      opacity: paymentLoading ? 0.7 : 1
+                    }}
+                    onMouseEnter={(e) => { if(!paymentLoading) e.target.style.backgroundColor = colors.accent2 }}
+                    onMouseLeave={(e) => { if(!paymentLoading) e.target.style.backgroundColor = colors.accent }}
+                  >
+                    {paymentLoading ? 'Creating order...' : `Pay ${formatINR(selectedPlan.challengeFee * 1.18)} →`}
+                  </button>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '24px', fontSize: '11px', color: colors.text2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Lock size={12} /> Razorpay Secured</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Shield size={12} /> 256-bit SSL</div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-
         </div>
-
       </div>
-    </DashboardLayout>
+      <BottomNav />
+    </div>
   )
 }
 
 export default BuyChallengePage
-

@@ -34,6 +34,7 @@ const protect = async (req, res, next) => {
     req.userId = decoded.userId;
     req.userRole = decoded.role;
     req.userEmail = user.email;
+    req.user = { id: user.id, role: user.role }; // Support for older isAdmin middleware
 
     next();
 

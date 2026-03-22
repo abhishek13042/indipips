@@ -1,353 +1,189 @@
 const { Client } = require('pg');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
-// Temporary wrapper to unblock login and basic dashboard while Prisma is broken on Node 25
-const prismaMock = {
-  user: {
-    findUnique: async ({ where }) => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
-      await client.connect();
-      try {
-        const query = where.id 
-          ? 'SELECT * FROM "User" WHERE id = $1' 
-          : 'SELECT * FROM "User" WHERE email = $1';
-        const res = await client.query(query, [where.id || where.email]);
-        if (res.rows[0]) {
-          const u = res.rows[0];
-          return { ...u, walletBalance: u.walletBalance ? BigInt(u.walletBalance) : 0n };
-        }
-        return null;
-      } finally { await client.end(); }
-    },
-    findFirst: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "User" WHERE "googleId" = $1 OR email = $2 LIMIT 1', [where.OR[0].googleId, where.OR[1].email]);
-            return res.rows[0] ? { ...res.rows[0], walletBalance: BigInt(res.rows[0].walletBalance || 0) } : null;
-        } finally { await client.end(); }
-    },
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "User" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    update: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const keys = Object.keys(data);
-            const sets = keys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
-            const vals = [...Object.values(data), where.id];
-            const res = await client.query(`UPDATE "User" SET ${sets} WHERE id = $${vals.length} RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    }
+console.log('--- PRISMA MOCK LOADED FROM src/utils/prisma.js ---');
+
+const runQuery = async (text, params) => {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    const res = await client.query(text, params);
+    return res;
+  } finally {
+    await client.end();
+  }
+};
+
+const formatResult = (table, row) => {
+  if (!row) return null;
+  const r = { ...row };
+  // BigInt conversions
+  if (table === 'User') r.walletBalance = r.walletBalance ? BigInt(r.walletBalance) : 0n;
+  if (table === 'Plan') {
+    r.accountSize = BigInt(r.accountSize);
+    r.challengeFee = BigInt(r.challengeFee);
+  }
+  if (table === 'Challenge') {
+    if (r.accountSize) r.accountSize = BigInt(r.accountSize);
+    if (r.targetProfit) r.targetProfit = BigInt(r.targetProfit);
+    if (r.currentBalance) r.currentBalance = BigInt(r.currentBalance);
+    if (r.startingBalance) r.startingBalance = BigInt(r.startingBalance);
+    if (r.maxDrawdownAmount) r.maxDrawdownAmount = BigInt(r.maxDrawdownAmount);
+    if (r.dailyLossLimitAmount) r.dailyLossLimitAmount = BigInt(r.dailyLossLimitAmount);
+  }
+  if (table === 'Trade') {
+    if (r.entryPrice) r.entryPrice = BigInt(r.entryPrice);
+    if (r.exitPrice) r.exitPrice = BigInt(r.exitPrice);
+    if (r.size) r.size = BigInt(r.size);
+    if (r.pnl) r.pnl = BigInt(r.pnl);
+  }
+  if (table === 'Payout') {
+    if (r.amountRequested) r.amountRequested = BigInt(r.amountRequested);
+    if (r.tdsAmount) r.tdsAmount = BigInt(r.tdsAmount);
+    if (r.netPayoutAmount) r.netPayoutAmount = BigInt(r.netPayoutAmount);
+    if (r.feeRefund) r.feeRefund = BigInt(r.feeRefund);
+  }
+  return r;
+};
+
+const createMockModel = (table) => ({
+  findUnique: async ({ where }) => {
+    const keys = Object.keys(where);
+    const text = `SELECT * FROM "${table}" WHERE "${keys[0]}" = $1`;
+    const res = await runQuery(text, [where[keys[0]]]);
+    return formatResult(table, res.rows[0]);
   },
-  plan: {
-    findMany: async ({ where = {} }) => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
-      await client.connect();
-      try {
-        const res = await client.query('SELECT * FROM "Plan" WHERE "isActive" = $1 ORDER BY "challengeType" ASC, "accountSize" ASC', [where.isActive ?? true]);
-        return res.rows.map(p => ({ ...p, accountSize: BigInt(p.accountSize), challengeFee: BigInt(p.challengeFee) }));
-      } finally { await client.end(); }
-    },
-    findUnique: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Plan" WHERE id = $1', [where.id]);
-            return res.rows[0] ? { ...res.rows[0], accountSize: BigInt(res.rows[0].accountSize), challengeFee: BigInt(res.rows[0].challengeFee) } : null;
-        } finally { await client.end(); }
-    },
-    findFirst: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Plan" WHERE "challengeType" = $1 AND "accountSize" = $2 AND "isActive" = $3 LIMIT 1', [where.challengeType, where.accountSize, where.isActive]);
-            return res.rows[0] ? { ...res.rows[0], accountSize: BigInt(res.rows[0].accountSize), challengeFee: BigInt(res.rows[0].challengeFee) } : null;
-        } finally { await client.end(); }
-    },
-    deleteMany: async () => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try { return await client.query('DELETE FROM "Plan"'); } finally { await client.end(); }
-    },
-    createMany: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            for (const item of data) {
-                const cols = Object.keys(item).map(k => `"${k}"`).join(', ');
-                const vals = Object.values(item);
-                const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-                await client.query(`INSERT INTO "Plan" (${cols}) VALUES (${placeholders})`, vals);
-            }
-            return { count: data.length };
-        } finally { await client.end(); }
-    }
-  },
-  challenge: {
-    findUnique: async ({ where, include }) => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
-      await client.connect();
-      try {
-        const res = await client.query('SELECT * FROM "Challenge" WHERE id = $1', [where.id]);
-        if (!res.rows[0]) return null;
-        const c = res.rows[0];
-        const challenge = { 
-            ...c, 
-            accountSize: BigInt(c.accountSize), 
-            currentBalance: BigInt(c.currentBalance),
-            peakBalance: BigInt(c.peakBalance),
-            totalPnl: BigInt(c.totalPnl || 0),
-            dailyPnl: BigInt(c.dailyPnl || 0)
-        };
-        if (include?.user) {
-            const uRes = await client.query('SELECT * FROM "User" WHERE id = $1', [c.userId]);
-            challenge.user = uRes.rows[0];
-        }
-        if (include?.plan) {
-            const pRes = await client.query('SELECT * FROM "Plan" WHERE id = $1', [c.planId]);
-            challenge.plan = pRes.rows[0];
-        }
-        return challenge;
-      } finally { await client.end(); }
-    },
-    findMany: async ({ where, include }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Challenge" WHERE "status" = $1', [where.status]);
-            const rows = [];
-            for (let c of res.rows) {
-                const challenge = { ...c, accountSize: BigInt(c.accountSize), currentBalance: BigInt(c.currentBalance) };
-                if (include?.trades) {
-                    const tRes = await client.query('SELECT * FROM "Trade" WHERE "challengeId" = $1 AND "status" = $2', [c.id, include.trades.where.status]);
-                    challenge.trades = tRes.rows.map(t => ({ ...t, entryPrice: BigInt(t.entryPrice), pnl: BigInt(t.pnl) }));
+  findFirst: async ({ where = {} }) => {
+    let text = `SELECT * FROM "${table}"`;
+    const params = [];
+    if (where.OR) {
+        const clauses = where.OR.map((o, i) => {
+            const k = Object.keys(o)[0];
+            params.push(o[k]);
+            return `"${k}" = $${params.length}`;
+        });
+        text += ` WHERE ${clauses.join(' OR ')}`;
+    } else {
+        const keys = Object.keys(where);
+        if (keys.length > 0) {
+            const clauses = keys.map((k, i) => {
+                const val = where[k];
+                if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+                    const op = Object.keys(val)[0];
+                    const pgOp = { gt: '>', lt: '<', gte: '>=', lte: '<=' }[op] || '=';
+                    params.push(val[op]);
+                    return `"${k}" ${pgOp} $${params.length}`;
                 }
-                rows.push(challenge);
-            }
-            return rows;
-        } finally { await client.end(); }
-    },
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "Challenge" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    update: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const keys = Object.keys(data);
-            const vals = [];
-            const setClauses = [];
-            keys.forEach((k, i) => {
-                const val = data[k];
-                if (typeof val === 'object' && val.increment) {
-                    setClauses.push(`"${k}" = "${k}" + $${i + 1}`);
-                    vals.push(val.increment);
-                } else {
-                    setClauses.push(`"${k}" = $${i + 1}`);
-                    vals.push(val);
-                }
+                params.push(val);
+                return `"${k}" = $${params.length}`;
             });
-            vals.push(where.id);
-            const res = await client.query(`UPDATE "Challenge" SET ${setClauses.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
+            text += ` WHERE ${clauses.join(' AND ')}`;
+        }
     }
+    text += ' LIMIT 1';
+    const res = await runQuery(text, params);
+    return formatResult(table, res.rows[0]);
   },
-  trade: {
-    findMany: async ({ where }) => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
-      await client.connect();
-      try {
-        const query = where.challengeId 
-            ? 'SELECT * FROM "Trade" WHERE "userId" = $1 AND "status" = $2 AND "challengeId" = $3'
-            : 'SELECT * FROM "Trade" WHERE "userId" = $1 AND "status" = $2';
-        const params = where.challengeId ? [where.userId, where.status, where.challengeId] : [where.userId, where.status];
-        const res = await client.query(query, params);
-        return res.rows.map(t => ({
-            ...t,
-            entryPrice: BigInt(t.entryPrice),
-            exitPrice: t.exitPrice ? BigInt(t.exitPrice) : null,
-            pnl: BigInt(t.pnl)
-        }));
-      } finally { await client.end(); }
-    },
-    findUnique: async ({ where, include }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Trade" WHERE id = $1', [where.id]);
-            if (!res.rows[0]) return null;
-            const t = res.rows[0];
-            const trade = { ...t, entryPrice: BigInt(t.entryPrice), pnl: BigInt(t.pnl) };
-            if (include?.challenge) {
-                const cRes = await client.query('SELECT * FROM "Challenge" WHERE id = $1', [t.challengeId]);
-                trade.challenge = cRes.rows[0] ? { ...cRes.rows[0], currentBalance: BigInt(cRes.rows[0].currentBalance), accountSize: BigInt(cRes.rows[0].accountSize) } : null;
-            }
-            return trade;
-        } finally { await client.end(); }
-    },
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "Trade" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    update: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const keys = Object.keys(data);
-            const sets = keys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
-            const vals = [...Object.values(data), where.id];
-            const res = await client.query(`UPDATE "Trade" SET ${sets} WHERE id = $${vals.length} RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
+  findMany: async ({ where = {}, orderBy } = {}) => {
+    let text = `SELECT * FROM "${table}"`;
+    const params = [];
+    const keys = Object.keys(where);
+    if (keys.length > 0) {
+        const clauses = keys.map((k, i) => {
+            params.push(where[k]);
+            return `"${k}" = $${params.length}`;
+        });
+        text += ` WHERE ${clauses.join(' AND ')}`;
     }
-  },
-  payment: {
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "Payment" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    update: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const col = Object.keys(where)[0];
-            const keys = Object.keys(data);
-            const sets = keys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
-            const vals = [...Object.values(data), where[col]];
-            const res = await client.query(`UPDATE "Payment" SET ${sets} WHERE "${col}" = $${vals.length} RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    updateMany: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const col = Object.keys(where)[0];
-            const keys = Object.keys(data);
-            const sets = keys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
-            const vals = [...Object.values(data), where[col]];
-            const res = await client.query(`UPDATE "Payment" SET ${sets} WHERE "${col}" = $${vals.length} RETURNING *`, vals);
-            return { count: res.rowCount };
-        } finally { await client.end(); }
-    },
-    findUnique: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const col = Object.keys(where)[0];
-            const res = await client.query(`SELECT * FROM "Payment" WHERE "${col}" = $1`, [where[col]]);
-            return res.rows[0] ? { ...res.rows[0], amount: BigInt(res.rows[0].amount) } : null;
-        } finally { await client.end(); }
-    },
-    findMany: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Payment" WHERE "userId" = $1 ORDER BY "createdAt" DESC', [where.userId]);
-            return res.rows.map(p => ({ ...p, amount: BigInt(p.amount) }));
-        } finally { await client.end(); }
+    if (orderBy) {
+        const ob = Array.isArray(orderBy) ? orderBy[0] : orderBy;
+        const key = Object.keys(ob)[0];
+        text += ` ORDER BY "${key}" ${ob[key].toUpperCase()}`;
     }
+    const res = await runQuery(text, params);
+    return res.rows.map(r => formatResult(table, r));
   },
-  payout: {
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "Payout" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    findMany: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "Payout" WHERE "userId" = $1 ORDER BY "requestedAt" DESC', [where.userId]);
-            return res.rows.map(p => ({ ...p, amountRequested: BigInt(p.amountRequested), amountAfterTds: BigInt(p.amountAfterTds) }));
-        } finally { await client.end(); }
+  create: async ({ data }) => {
+    const now = new Date();
+    const d = { id: uuidv4(), createdAt: now, ...data };
+    if (!['EmailVerification', 'AuditLog'].includes(table)) {
+        d.updatedAt = now;
     }
+    const cols = Object.keys(d).map(k => `"${k}"`).join(', ');
+    const vals = Object.values(d);
+    const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+    const res = await runQuery(`INSERT INTO "${table}" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
+    return formatResult(table, res.rows[0]);
   },
-  auditLog: {
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "AuditLog" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
+  update: async ({ where, data }) => {
+    const d = { ...data };
+    if (!['EmailVerification', 'AuditLog'].includes(table)) {
+        d.updatedAt = new Date();
     }
+    const keys = Object.keys(d);
+    const sets = [];
+    const params = [];
+    keys.forEach((k, i) => {
+        const val = d[k];
+        if (val && typeof val === 'object' && val.increment) {
+            sets.push(`"${k}" = "${k}" + $${i + 1}`);
+            params.push(val.increment);
+        } else {
+            sets.push(`"${k}" = $${i + 1}`);
+            params.push(val);
+        }
+    });
+    params.push(where.id || where.email); // Basic fallback for where
+    const whereKey = where.id ? 'id' : 'email';
+    const res = await runQuery(`UPDATE "${table}" SET ${sets.join(', ')} WHERE ${whereKey} = $${params.length} RETURNING *`, params);
+    return formatResult(table, res.rows[0]);
   },
-  emailVerification: {
-    create: async ({ data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const cols = Object.keys(data).map(k => `"${k}"`).join(', ');
-            const vals = Object.values(data);
-            const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-            const res = await client.query(`INSERT INTO "EmailVerification" (${cols}) VALUES (${placeholders}) RETURNING *`, vals);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    findFirst: async ({ where }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('SELECT * FROM "EmailVerification" WHERE "userId" = $1 AND "token" = $2 AND "verified" = $3 AND "expiresAt" > $4', [where.userId, where.token, where.verified, new Date()]);
-            return res.rows[0];
-        } finally { await client.end(); }
-    },
-    update: async ({ where, data }) => {
-        const client = new Client({ connectionString: process.env.DATABASE_URL });
-        await client.connect();
-        try {
-            const res = await client.query('UPDATE "EmailVerification" SET "verified" = $1 WHERE id = $2 RETURNING *', [data.verified, where.id]);
-            return res.rows[0];
-        } finally { await client.end(); }
+  deleteMany: async () => {
+    return await runQuery(`DELETE FROM "${table}"`);
+  },
+  createMany: async ({ data }) => {
+    const now = new Date();
+    for (const item of data) {
+      const d = { id: uuidv4(), createdAt: now, ...item };
+      if (!['EmailVerification', 'AuditLog'].includes(table)) {
+          d.updatedAt = now;
+      }
+      const cols = Object.keys(d).map(k => `"${k}"`).join(', ');
+      const vals = Object.values(d);
+      const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+      await runQuery(`INSERT INTO "${table}" (${cols}) VALUES (${placeholders})`, vals);
     }
+    return { count: data.length };
   },
+  count: async ({ where = {} } = {}) => {
+    let text = `SELECT COUNT(*) FROM "${table}"`;
+    const params = [];
+    const keys = Object.keys(where);
+    if (keys.length > 0) {
+        const clauses = keys.map((k, i) => {
+            params.push(where[k]);
+            return `"${k}" = $${params.length}`;
+        });
+        text += ` WHERE ${clauses.join(' AND ')}`;
+    }
+    const res = await runQuery(text, params);
+    return parseInt(res.rows[0].count);
+  }
+});
+
+const prismaMock = {
+  user: createMockModel('User'),
+  plan: createMockModel('Plan'),
+  challenge: createMockModel('Challenge'),
+  trade: createMockModel('Trade'),
+  payment: createMockModel('Payment'),
+  payout: createMockModel('Payout'),
+  emailVerification: createMockModel('EmailVerification'),
+  auditLog: createMockModel('AuditLog'),
+  $connect: async () => {},
   $disconnect: async () => {},
   $transaction: async (calls) => {
-    // Basic mock for transactions (serial execution for now)
     const results = [];
     for (const call of calls) {
       results.push(await call);

@@ -1,128 +1,159 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
-import LandingPage from './pages/LandingPage'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import DashboardPage from './pages/DashboardPage'
-import BuyChallengePage from './pages/BuyChallengePage'
-import OAuthSuccess from './pages/OAuthSuccess'
-import ChallengeDetailPage from './pages/ChallengeDetailPage'
-import AccountsPage from './pages/AccountsPage'
-import PayoutsPage from './pages/PayoutsPage'
-import LeaderboardPage from './pages/LeaderboardPage'
-import CompetitionsPage from './pages/CompetitionsPage'
-import CalendarPage from './pages/CalendarPage'
-import ProfilePage from './pages/ProfilePage'
-import KYCPage from './pages/KYCPage'
-import BrokerConnectPage from './pages/BrokerConnectPage'
-import AdminDashboardPage from './pages/AdminDashboardPage'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route } 
+  from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
-
+import AdminRoute from './AdminRoute'
 import useAuthStore from './stores/authStore'
 
-// Admin-only route guard
-const AdminRoute = ({ children }) => {
-  const { user } = useAuthStore()
-  if (!user) return <Navigate to="/login" replace />
-  if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-    return <Navigate to="/dashboard" replace />
-  }
-  return children
-}
-
-function App() {
-  const { isLoading } = useAuthStore()
-
-  if (isLoading) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#6b7280', fontWeight: 600 }}>Loading session...</p>
+// Loading screen
+const Loading = () => (
+  <div className="min-h-screen bg-[#0A0F1E] 
+    flex items-center justify-center">
+    <div className="text-center">
+      <div className="w-12 h-12 border-4 
+        border-[#2563EB] border-t-transparent 
+        rounded-full animate-spin mx-auto mb-4">
       </div>
-    )
-  }
+      <p className="text-[#6B7280]">Loading...</p>
+    </div>
+  </div>
+)
+
+// Lazy load all pages
+const LandingPage = lazy(() => 
+  import('./pages/LandingPage'))
+const LoginPage = lazy(() => 
+  import('./pages/LoginPage'))
+const RegisterPage = lazy(() => 
+  import('./pages/RegisterPage'))
+const ForgotPasswordPage = lazy(() => 
+  import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => 
+  import('./pages/ResetPasswordPage'))
+const LeaderboardPage = lazy(() => 
+  import('./pages/LeaderboardPage'))
+const CertificateVerifyPage = lazy(() => 
+  import('./pages/CertificateVerifyPage'))
+const NotFoundPage = lazy(() => 
+  import('./pages/NotFoundPage'))
+const DashboardPage = lazy(() => 
+  import('./pages/DashboardPage'))
+const ChallengesPage = lazy(() => 
+  import('./pages/ChallengesPage'))
+const ChallengeDetailPage = lazy(() => 
+  import('./pages/ChallengeDetailPage'))
+const BuyChallengePage = lazy(() => 
+  import('./pages/BuyChallengePage'))
+const PaymentSuccessPage = lazy(() => 
+  import('./pages/PaymentSuccessPage'))
+const PaymentFailedPage = lazy(() => 
+  import('./pages/PaymentFailedPage'))
+const KYCPage = lazy(() => 
+  import('./pages/KYCPage'))
+const PayoutsPage = lazy(() => 
+  import('./pages/PayoutsPage'))
+const ProfilePage = lazy(() => 
+  import('./pages/ProfilePage'))
+const BrokerConnectPage = lazy(() => 
+  import('./pages/BrokerConnectPage'))
+const NotificationsPage = lazy(() => 
+  import('./pages/NotificationsPage'))
+const TradingTerminalPage = lazy(() => 
+  import('./pages/TradingTerminalPage'))
+const AdminDashboardPage = lazy(() => 
+  import('./pages/AdminDashboardPage'))
+const AdminTradersPage = lazy(() => 
+  import('./pages/AdminTradersPage'))
+const AdminTraderDetailPage = lazy(() => 
+  import('./pages/AdminTraderDetailPage'))
+const AdminChallengesPage = lazy(() => 
+  import('./pages/AdminChallengesPage'))
+const AdminPayoutsPage = lazy(() => 
+  import('./pages/AdminPayoutsPage'))
+const AdminAnalyticsPage = lazy(() => 
+  import('./pages/AdminAnalyticsPage'))
+
+export default function App() {
+  const loadFromStorage = useAuthStore(
+    s => s.loadFromStorage
+  )
+
+  useEffect(() => {
+    loadFromStorage()
+  }, [])
 
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/auth/success" element={<OAuthSuccess />} />
-      <Route path="/dashboard" element={<Navigate to="/dashboard/accounts" replace />} />
-      <Route path="/dashboard/accounts" element={
-        <ProtectedRoute>
-          <AccountsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/summary/:id" element={
-        <ProtectedRoute>
-          <DashboardPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/analytics" element={
-        <ProtectedRoute>
-          <DashboardPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/new-challenge" element={
-        <ProtectedRoute>
-          <BuyChallengePage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/challenges/:id" element={
-        <ProtectedRoute>
-          <ChallengeDetailPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/accounts" element={
-        <ProtectedRoute>
-          <AccountsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/payouts" element={
-        <ProtectedRoute>
-          <PayoutsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/leaderboard" element={
-        <ProtectedRoute>
-          <LeaderboardPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/competitions" element={
-        <ProtectedRoute>
-          <CompetitionsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/calendar" element={
-        <ProtectedRoute>
-          <CalendarPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/profile" element={
-        <ProtectedRoute>
-          <ProfilePage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/kyc" element={
-        <ProtectedRoute>
-          <KYCPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/dashboard/connect-broker" element={
-        <ProtectedRoute>
-          <BrokerConnectPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/admin/matrix" element={
-        <AdminRoute>
-          <AdminDashboardPage />
-        </AdminRoute>
-      } />
-    </Routes>
+    <BrowserRouter>
+      <Suspense fallback={<Loading />}>
+        <Routes>
+          
+          {/* PUBLIC ROUTES */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" 
+            element={<LoginPage />} />
+          <Route path="/register" 
+            element={<RegisterPage />} />
+          <Route path="/forgot-password" 
+            element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" 
+            element={<ResetPasswordPage />} />
+          <Route path="/leaderboard" 
+            element={<LeaderboardPage />} />
+          <Route path="/verify/:code" 
+            element={<CertificateVerifyPage />} />
+
+          {/* PROTECTED TRADER ROUTES */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" 
+              element={<DashboardPage />} />
+            <Route path="/challenges" 
+              element={<ChallengesPage />} />
+            <Route path="/challenges/:id" 
+              element={<ChallengeDetailPage />} />
+            <Route path="/terminal/:id" 
+              element={<TradingTerminalPage />} />
+            <Route path="/buy-challenge" 
+              element={<BuyChallengePage />} />
+            <Route path="/payment/success" 
+              element={<PaymentSuccessPage />} />
+            <Route path="/payment/failed" 
+              element={<PaymentFailedPage />} />
+            <Route path="/kyc" 
+              element={<KYCPage />} />
+            <Route path="/payouts" 
+              element={<PayoutsPage />} />
+            <Route path="/profile" 
+              element={<ProfilePage />} />
+            <Route path="/broker" 
+              element={<BrokerConnectPage />} />
+            <Route path="/notifications" 
+              element={<NotificationsPage />} />
+          </Route>
+
+          {/* ADMIN ROUTES */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AdminRoute />}>
+              <Route path="/admin" 
+                element={<AdminDashboardPage />} />
+              <Route path="/admin/traders" 
+                element={<AdminTradersPage />} />
+              <Route path="/admin/traders/:id" 
+                element={<AdminTraderDetailPage />} />
+              <Route path="/admin/challenges" 
+                element={<AdminChallengesPage />} />
+              <Route path="/admin/payouts" 
+                element={<AdminPayoutsPage />} />
+              <Route path="/admin/analytics" 
+                element={<AdminAnalyticsPage />} />
+            </Route>
+          </Route>
+
+          {/* 404 */}
+          <Route path="*" 
+            element={<NotFoundPage />} />
+
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
   )
 }
-
-export default App

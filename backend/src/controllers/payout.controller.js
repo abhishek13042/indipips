@@ -11,42 +11,44 @@ const getPayoutEligibility = async (req, res) => {
 
     const challenge = await prisma.challenge.findUnique({
       where: { id: challengeId },
-      include: { plan: true }
+      include: { plan: true, payouts: true }
     });
 
     if (!challenge || challenge.userId !== req.userId) {
       return res.status(404).json({ success: false, message: 'Challenge not found.' });
     }
 
-    // Payout Logic:
-    // 1. Must be in ACTIVE or PASSED status
-    // 2. Balance must be > Account Size (Profit)
-    // 3. Minimum profit $100 (10000 cents)
+    // 1. Check Payout Age (14 days after passing)
+    const ageCheck = payoutService.checkPayoutAge(challenge);
+    
+    // 2. Determine if first payout (no SUCCESS/PENDING payouts yet)
+    const isFirstPayout = !challenge.payouts.some(p => p.status === 'SUCCESS' || p.status === 'PENDING' || p.status === 'APPROVED' || p.status === 'TRANSFERRED');
 
     const profit = challenge.currentBalance - challenge.accountSize;
-    const isEligible = profit >= 10000n; // $100 minimum
+    const minProfit = 50000n; // ₹500 minimum (50000 paise)
+    const isProfitEligible = profit >= minProfit;
 
     const breakdown = payoutService.calculateBreakdown(
       profit > 0n ? profit : 0n, 
-      80 // Default 80% split for now
+      challenge.plan.challengeFee,
+      isFirstPayout,
+      challenge.profitSplitPct || 80
     );
 
     res.json({
       success: true,
       data: {
-        isEligible,
-        profit: Number(profit) / 100,
-        breakdown: {
-          ...breakdown,
-          totalProfit: breakdown.totalProfit / 100,
-          traderGrossShare: breakdown.traderGrossShare / 100,
-          firmShare: breakdown.firmShare / 100,
+        eligible: ageCheck.isEligible && isProfitEligible,
+        reason: !ageCheck.isEligible ? ageCheck.reason : (!isProfitEligible ? 'Minimum profit of ₹500 required.' : 'You are eligible for payout.'),
+        availableFrom: ageCheck.availableFrom,
+        daysRemaining: ageCheck.daysRemaining,
+        minimumAmount: 500,
+        estimatedPayout: {
+          grossProfit: Number(profit) / 100,
+          traderShare: breakdown.traderGrossShare / 100,
           tdsAmount: breakdown.tdsAmount / 100,
+          feeRefund: breakdown.feeRefund / 100,
           netPayout: breakdown.netPayout / 100
-        },
-        requirements: {
-          minProfit: 100,
-          status: ['ACTIVE', 'PASSED']
         }
       }
     });
@@ -66,14 +68,14 @@ const requestPayout = async (req, res) => {
 
     const challenge = await prisma.challenge.findUnique({
       where: { id: challengeId },
-      include: { user: true }
+      include: { user: true, plan: true, payouts: true }
     });
 
     if (!challenge || challenge.userId !== req.userId) {
       return res.status(404).json({ success: false, message: 'Challenge not found.' });
     }
 
-    // ✅ KYC Guard: Only VERIFIED traders can withdraw
+    // 1. KYC Guard
     if (challenge.user.kycStatus !== 'VERIFIED') {
       return res.status(403).json({
         success: false,
@@ -81,12 +83,30 @@ const requestPayout = async (req, res) => {
       });
     }
 
-    const profit = challenge.currentBalance - challenge.accountSize;
-    if (profit < 10000n) {
-      return res.status(400).json({ success: false, message: 'Minimum profit for payout is $100.' });
+    // 2. 14-Day Hold Guard
+    const ageCheck = payoutService.checkPayoutAge(challenge);
+    if (!ageCheck.isEligible) {
+      return res.status(403).json({
+        success: false,
+        message: ageCheck.reason,
+        data: { availableFrom: ageCheck.availableFrom, daysRemaining: ageCheck.daysRemaining }
+      });
     }
 
-    const breakdown = payoutService.calculateBreakdown(profit, 80);
+    const profit = challenge.currentBalance - challenge.accountSize;
+    if (profit < 50000n) { // ₹500 min
+      return res.status(400).json({ success: false, message: 'Minimum profit for payout is ₹500.' });
+    }
+
+    // 3. First Payout Detection
+    const isFirstPayout = !challenge.payouts.some(p => p.status === 'SUCCESS' || p.status === 'PENDING' || p.status === 'APPROVED' || p.status === 'TRANSFERRED');
+
+    const breakdown = payoutService.calculateBreakdown(
+      profit, 
+      challenge.plan.challengeFee, 
+      isFirstPayout,
+      challenge.profitSplitPct || 80
+    );
 
     // Create Payout Record
     const payout = await prisma.payout.create({
@@ -94,8 +114,12 @@ const requestPayout = async (req, res) => {
         userId: req.userId,
         challengeId: challengeId,
         amountRequested: BigInt(Math.floor(breakdown.traderGrossShare)),
-        amountAfterTds: BigInt(Math.floor(breakdown.netPayout)),
-        profitSplit: 80,
+        tdsAmount: BigInt(Math.floor(breakdown.tdsAmount)),
+        netPayoutAmount: BigInt(Math.floor(breakdown.netPayout)),
+        feeRefund: BigInt(Math.floor(breakdown.feeRefund)),
+        profitSplit: challenge.profitSplitPct || 80,
+        traderSharePct: challenge.profitSplitPct || 80,
+        isFirstPayout: isFirstPayout,
         status: 'PENDING'
       }
     });
@@ -103,7 +127,12 @@ const requestPayout = async (req, res) => {
     res.json({
       success: true,
       message: 'Payout request submitted successfully.',
-      data: payout
+      data: {
+        ...payout,
+        amountRequested: Number(payout.amountRequested) / 100,
+        tdsAmount: Number(payout.tdsAmount) / 100,
+        netPayoutAmount: Number(payout.netPayoutAmount) / 100
+      }
     });
   } catch (error) {
     console.error('Request payout error:', error);
@@ -121,7 +150,7 @@ const getMyPayouts = async (req, res) => {
       where: { userId: req.userId },
       include: {
         challenge: {
-          select: { accountNodeId: true }  // ✅ Fixed: was `nodeAccountId` (wrong field name)
+          select: { accountNodeId: true }
         }
       },
       orderBy: { requestedAt: 'desc' }
@@ -130,7 +159,8 @@ const getMyPayouts = async (req, res) => {
     const formatted = payouts.map(p => ({
       ...p,
       amountRequested: Number(p.amountRequested) / 100,
-      amountAfterTds: Number(p.amountAfterTds) / 100
+      tdsAmount: Number(p.tdsAmount || 0) / 100,
+      netPayoutAmount: Number(p.netPayoutAmount || 0) / 100
     }));
 
     res.json({ success: true, data: formatted });

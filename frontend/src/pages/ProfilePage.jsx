@@ -1,243 +1,311 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { User, Mail, Phone, Lock, Bell, BellOff, ShieldCheck, UserCheck, Save, Camera } from 'lucide-react'
-import DashboardLayout from '../components/DashboardLayout'
-import { useAuth } from '../context/AuthContext'
+import { useState, useEffect } from 'react'
+import { User, Mail, Phone, Shield, Lock, Share2, Trash2, Copy, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import api from '../api'
+import Sidebar from '../components/dashboard/Sidebar'
+import TopBar from '../components/dashboard/TopBar'
+import { useToast } from '../components/ui/Toast'
 
-function ProfilePage() {
-  const { user } = useAuth()
+const colors = {
+  bg: '#060B14',
+  surface: '#0D1420',
+  surface2: '#131D2E',
+  border: '#1E2D40',
+  accent: '#2563EB',
+  success: '#10B981',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  text: '#F1F5F9',
+  text2: '#94A3B8',
+  text3: '#475569'
+}
+
+const formatINR = (paise) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(paise / 100)
+}
+
+const ProfilePage = () => {
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
   
-  const [profileForm, setProfileForm] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
-    email: user?.email || '',
-    phone: user?.phone || ''
-  })
-  
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  })
+  const { showToast } = useToast()
 
-  const [savingProfile, setSavingProfile] = useState(false)
-  const [savingPassword, setSavingPassword] = useState(false)
-  const [profileMessage, setProfileMessage] = useState({ type: '', text: '' })
-  const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' })
+  useEffect(() => {
+    fetchProfile()
+  }, [])
 
-  const handleProfileChange = (e) => setProfileForm({ ...profileForm, [e.target.name]: e.target.value })
-  const handlePasswordChange = (e) => setPasswordForm({ ...passwordForm, [e.target.name]: e.target.value })
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault()
-    setSavingProfile(true)
+  const fetchProfile = async () => {
     try {
-      // Endpoint logic would go here
-      await new Promise(res => setTimeout(res, 1000)) // Mock delay
-      setProfileMessage({ type: 'success', text: 'Profile updated successfully.' })
+      const res = await api.get('/users/profile')
+      setProfile(res.data.data)
+      setFullName(res.data.data.fullName)
     } catch (err) {
-      setProfileMessage({ type: 'error', text: 'Failed to update profile.' })
+      console.error(err)
     } finally {
-      setSavingProfile(false)
-      setTimeout(() => setProfileMessage({ type: '', text: '' }), 3000)
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateProfile = async () => {
+    setSubmitting(true)
+    try {
+      await api.put('/users/profile', { fullName })
+      showToast('Profile updated successfully')
+      setEditing(false)
+      fetchProfile()
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Update failed', 'error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleUpdatePassword = async (e) => {
     e.preventDefault()
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordMessage({ type: 'error', text: 'New passwords do not match.' })
-      return
+    if (passwordData.new !== passwordData.confirm) {
+        showToast('Passwords do not match', 'error')
+        return
     }
-    setSavingPassword(true)
+    setSubmitting(true)
     try {
-      // Endpoint logic would go here
-      await new Promise(res => setTimeout(res, 1000)) // Mock delay
-      setPasswordMessage({ type: 'success', text: 'Security key updated.' })
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      await api.put('/users/change-password', {
+        currentPassword: passwordData.current,
+        newPassword: passwordData.new
+      })
+      showToast('Password updated successfully')
+      setPasswordData({ current: '', new: '', confirm: '' })
     } catch (err) {
-      setPasswordMessage({ type: 'error', text: 'Failed to update security key.' })
+      showToast(err.response?.data?.message || 'Password update failed', 'error')
     } finally {
-      setSavingPassword(false)
-      setTimeout(() => setPasswordMessage({ type: '', text: '' }), 3000)
+      setSubmitting(false)
     }
   }
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm !== 'DELETE') return
+    setSubmitting(true)
+    try {
+      await api.delete('/users/account')
+      showToast('Account deleted successfully')
+      window.location.href = '/login'
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Deletion failed', 'error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+  const copyReferral = () => {
+    navigator.clipboard.writeText(profile.referralCode)
+    showToast('Referral code copied!')
   }
+
+  if (loading) return null
+
+  const initials = profile?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'
 
   return (
-    <DashboardLayout>
-      <motion.div 
-        variants={containerVariants}
-        initial="hidden"
-        animate="show"
-        className="space-y-6"
-      >
-        {/* Header Area */}
-        <motion.div variants={itemVariants} className="bg-black border border-gray-800 rounded-3xl p-8 shadow-xl relative overflow-hidden flex flex-col md:flex-row items-center gap-8">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-green-400/5 rounded-full blur-[80px] pointer-events-none"></div>
-          
-          <div className="relative z-10">
-            <div className="w-24 h-24 rounded-full bg-gray-900 border-2 border-gray-700 flex items-center justify-center relative group overflow-hidden">
-               <span className="text-3xl font-black text-gray-500">{user?.firstName?.charAt(0) || 'U'}</span>
-               <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                 <Camera className="text-white" size={24} />
-               </div>
-            </div>
+    <div style={{ backgroundColor: colors.bg, minHeight: '100vh', display: 'flex', fontFamily: "'Inter', sans-serif" }}>
+      <Sidebar />
+      <div style={{ flex: 1, marginLeft: '240px', paddingTop: '64px', minHeight: '100vh', padding: '32px' }}>
+        <TopBar />
+        
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Profile & Settings</h1>
+            <p style={{ fontSize: '16px', color: colors.text2 }}>Manage your account and preferences</p>
           </div>
-          
-          <div className="text-center md:text-left relative z-10 flex-1">
-             <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
-               <h2 className="text-3xl font-black text-white font-outfit tracking-tight">{user?.firstName} {user?.lastName}</h2>
-               <span className="px-3 py-1 rounded-md bg-green-400/10 border border-green-400/20 text-green-400 text-xs font-black flex items-center gap-1">
-                 <UserCheck size={14} /> Verified Matrix Identity
-               </span>
-             </div>
-             <p className="text-gray-400 font-medium">Manage your personal settings, security keys, and communication preferences.</p>
-          </div>
-        </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-           
-           {/* Section 1: Personal Details */}
-           <motion.div variants={itemVariants} className="glass-dark border border-gray-800 rounded-3xl p-8 shadow-2xl relative">
-              <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-800">
-                <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-gray-400">
-                  <User size={18} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', alignItems: 'flex-start' }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              
+              {/* Profile Overview */}
+              <div style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '32px', display: 'flex', alignItems: 'center', gap: '24px' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'rgba(37,99,235,0.15)', color: colors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold' }}>
+                  {initials}
                 </div>
-                <div>
-                  <h3 className="text-xl font-black text-white font-outfit">Identity Specs</h3>
-                  <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Personal Information</p>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: 'white', marginBottom: '4px' }}>{profile.fullName}</h2>
+                  <div style={{ display: 'flex', gap: '16px', color: colors.text2, fontSize: '14px', marginBottom: '12px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={14} /> {profile.email}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={14} /> {profile.phone || 'No phone'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <span style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', backgroundColor: 'rgba(37,99,235,0.1)', color: colors.accent, textTransform: 'uppercase' }}>Trader</span>
+                    {profile.kycVerified ? (
+                      <span style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', backgroundColor: 'rgba(16,185,129,0.1)', color: colors.success, textTransform: 'uppercase' }}>KYC Verified ✓</span>
+                    ) : (
+                      <span style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', backgroundColor: 'rgba(245,158,11,0.1)', color: colors.warning, textTransform: 'uppercase' }}>KYC Pending ⚠</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {profileMessage.text && (
-                <div className={`p-4 rounded-xl mb-6 text-sm font-bold border ${profileMessage.type === 'success' ? 'bg-green-400/10 text-green-400 border-green-400/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                  {profileMessage.text}
+              {/* Personal Information */}
+              <div style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: 'white' }}>Personal Information</h3>
+                  {!editing ? (
+                    <button onClick={() => setEditing(true)} style={{ background: 'none', border: `1px solid ${colors.border}`, color: 'white', padding: '6px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Edit</button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => setEditing(false)} style={{ background: 'none', border: 'none', color: colors.text2, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={handleUpdateProfile} disabled={submitting} style={{ backgroundColor: colors.accent, border: 'none', color: 'white', padding: '6px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
+                        {submitting ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              <form onSubmit={handleUpdateProfile} className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">First Name</label>
-                    <input type="text" name="firstName" value={profileForm.firstName} onChange={handleProfileChange} className="w-full bg-black border border-gray-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '12px', textTransform: 'uppercase', fontWeight: 600, marginBottom: '8px' }}>Full Name</label>
+                    {editing && !profile.kycVerified ? (
+                      <input value={fullName} onChange={(e) => setFullName(e.target.value)} style={{ width: '100%', padding: '10px 14px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: '8px', color: 'white' }} />
+                    ) : (
+                      <div style={{ color: 'white', fontSize: '16px' }}>{profile.fullName}</div>
+                    )}
+                    {profile.kycVerified && editing && (
+                      <p style={{ fontSize: '11px', color: colors.warning, marginTop: '4px' }}>Name is locked after Aadhaar verification.</p>
+                    )}
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Last Name</label>
-                    <input type="text" name="lastName" value={profileForm.lastName} onChange={handleProfileChange} className="w-full bg-black border border-gray-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '12px', textTransform: 'uppercase', fontWeight: 600, marginBottom: '8px' }}>Email Address</label>
+                    <div style={{ color: 'white', fontSize: '16px', opacity: 0.6 }}>{profile.email}</div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '12px', textTransform: 'uppercase', fontWeight: 600, marginBottom: '8px' }}>Phone Number</label>
+                    <div style={{ color: 'white', fontSize: '16px' }}>{profile.phone || 'Not added'}</div>
                   </div>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Primary Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                    <input type="email" name="email" value={profileForm.email} disabled className="w-full bg-gray-900/50 border border-gray-800 rounded-xl py-3 pl-12 pr-4 text-gray-500 cursor-not-allowed" />
-                  </div>
-                  <p className="text-xs text-green-400 mt-2 font-bold flex items-center gap-1"><ShieldCheck size={12} /> Contact support to change secure Email</p>
+              {/* Danger Zone */}
+              <div style={{ backgroundColor: 'rgba(239,68,68,0.02)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '20px', padding: '32px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: colors.danger, marginBottom: '16px' }}>Danger Zone</h3>
+                <p style={{ fontSize: '14px', color: colors.text2, marginBottom: '20px' }}>Permanently delete your account and all trading data. This action is irreversible.</p>
+                <button 
+                  onClick={() => setShowDeleteModal(true)}
+                  style={{ backgroundColor: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Delete Account
+                </button>
+              </div>
+
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              
+              {/* Security Settings */}
+              <div style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '32px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                  <Lock color={colors.accent} size={20} />
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: 'white' }}>Security Settings</h3>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Contact Number</label>
-                  <div className="relative">
-                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                    <input type="tel" name="phone" value={profileForm.phone} onChange={handleProfileChange} className="w-full bg-black border border-gray-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
+                <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '13px', marginBottom: '8px' }}>Current Password</label>
+                    <input type="password" value={passwordData.current} onChange={(e) => setPasswordData({...passwordData, current: e.target.value})} style={{ width: '100%', padding: '12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: '8px', color: 'white' }} />
                   </div>
-                </div>
-
-                <div className="pt-4 mt-8 border-t border-gray-800 flex justify-end">
-                  <button type="submit" disabled={savingProfile} className="px-6 py-3 rounded-xl bg-white text-black font-black text-sm flex items-center gap-2 hover:bg-gray-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                    {savingProfile ? <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <><Save size={16} /> Save Identity</>}
+                  <div>
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '13px', marginBottom: '8px' }}>New Password</label>
+                    <input type="password" value={passwordData.new} onChange={(e) => setPasswordData({...passwordData, new: e.target.value})} style={{ width: '100%', padding: '12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: '8px', color: 'white' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: colors.text2, fontSize: '13px', marginBottom: '8px' }}>Confirm New Password</label>
+                    <input type="password" value={passwordData.confirm} onChange={(e) => setPasswordData({...passwordData, confirm: e.target.value})} style={{ width: '100%', padding: '12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: '8px', color: 'white' }} />
+                  </div>
+                  <button type="submit" disabled={submitting} style={{ backgroundColor: 'transparent', border: `1px solid ${colors.border}`, color: 'white', padding: '12px', borderRadius: '10px', marginTop: '8px', fontWeight: 600, cursor: 'pointer' }}>
+                    {submitting ? 'Updating...' : 'Update Password'}
                   </button>
+                </form>
+              </div>
+
+              {/* Referral System */}
+              <div style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '32px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                  <Share2 color={colors.accent} size={20} />
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: 'white' }}>Referral Program</h3>
                 </div>
-              </form>
-           </motion.div>
 
-           {/* Column 2: Security & Preferences */}
-           <div className="space-y-8">
-              {/* Security */}
-              <motion.div variants={itemVariants} className="bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-xl">
-                 <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-800">
-                   <div className="w-10 h-10 rounded-xl bg-black border border-gray-700 flex items-center justify-center text-gray-400">
-                     <Lock size={18} />
-                   </div>
-                   <div>
-                     <h3 className="text-xl font-black text-white font-outfit">Matrix Security</h3>
-                     <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Update Master Key</p>
-                   </div>
-                 </div>
-
-                 {passwordMessage.text && (
-                  <div className={`p-4 rounded-xl mb-6 text-sm font-bold border ${passwordMessage.type === 'success' ? 'bg-green-400/10 text-green-400 border-green-400/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                    {passwordMessage.text}
+                <div style={{ backgroundColor: colors.surface2, border: `1px dashed ${colors.border}`, borderRadius: '12px', padding: '24px', textAlign: 'center', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '11px', color: colors.text3, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Your Referral Code</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: colors.accent, letterSpacing: '4px' }}>{profile.referralCode}</span>
+                    <button onClick={copyReferral} style={{ background: 'none', border: 'none', color: colors.text2, cursor: 'pointer' }}><Copy size={18} /></button>
                   </div>
-                )}
+                </div>
 
-                 <form onSubmit={handleUpdatePassword} className="space-y-4">
-                   <div>
-                     <input type="password" name="currentPassword" value={passwordForm.currentPassword} onChange={handlePasswordChange} placeholder="Current Security Key" required className="w-full bg-black border border-gray-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                   <div style={{ backgroundColor: 'rgba(37,99,235,0.05)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '12px', color: colors.text2, marginBottom: '4px' }}>Total Referred</p>
+                      <p style={{ fontSize: '20px', fontWeight: 'bold', color: 'white' }}>{profile.referralCount || 0}</p>
                    </div>
-                   <div>
-                     <input type="password" name="newPassword" value={passwordForm.newPassword} onChange={handlePasswordChange} placeholder="New Security Key" required className="w-full bg-black border border-gray-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
+                   <div style={{ backgroundColor: 'rgba(16,185,129,0.05)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '12px', color: colors.text2, marginBottom: '4px' }}>Wallet Balance</p>
+                      <p style={{ fontSize: '20px', fontWeight: 'bold', color: colors.success }}>{formatINR(profile.walletBalance || 0)}</p>
                    </div>
-                   <div>
-                     <input type="password" name="confirmPassword" value={passwordForm.confirmPassword} onChange={handlePasswordChange} placeholder="Confirm New Key" required className="w-full bg-black border border-gray-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-green-400 transition-colors" />
-                   </div>
-                   <button type="submit" disabled={savingPassword} className="w-full py-4 rounded-xl bg-gray-800 text-white font-black text-sm flex items-center justify-center gap-2 hover:bg-gray-700 hover:text-green-400 transition-colors mt-2">
-                     {savingPassword ? <div className="w-5 h-5 border-2 border-white/30 border-t-green-400 rounded-full animate-spin" /> : 'Update Key Protocol'}
-                   </button>
-                 </form>
-              </motion.div>
+                </div>
 
-              {/* Notifications */}
-              <motion.div variants={itemVariants} className="bg-black border border-gray-800 rounded-3xl p-8 shadow-xl">
-                 <div className="flex items-center gap-3 mb-6">
-                   <div className="w-10 h-10 rounded-xl bg-gray-900 border border-gray-800 flex items-center justify-center text-gray-400">
-                     <Bell size={18} />
-                   </div>
-                   <div>
-                     <h3 className="text-xl font-black text-white font-outfit">Comms Feed</h3>
-                   </div>
-                 </div>
+                <div style={{ display: 'flex', gap: '12px', backgroundColor: 'rgba(37,99,235,0.05)', padding: '16px', borderRadius: '12px' }}>
+                   <CheckCircle size={16} color={colors.accent} style={{ flexShrink: 0 }} />
+                   <p style={{ fontSize: '12px', color: colors.text2, lineHeight: '1.5' }}>
+                     Earn 10% of your friend's first challenge fee as wallet credits. Credits can be used for discounts on your future challenges.
+                   </p>
+                </div>
+              </div>
 
-                 <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-gray-900 border border-gray-800 rounded-xl">
-                       <div>
-                         <p className="font-bold text-white text-sm">Matrix Updates (Trades)</p>
-                         <p className="text-xs text-gray-500 mt-1">Receive signals on trade closures and equity triggers</p>
-                       </div>
-                       <label className="relative inline-flex items-center cursor-pointer">
-                         <input type="checkbox" className="sr-only peer" defaultChecked />
-                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.2)]"></div>
-                       </label>
-                    </div>
+            </div>
 
-                    <div className="flex items-center justify-between p-4 bg-gray-900 border border-gray-800 rounded-xl opacity-60">
-                       <div>
-                         <p className="font-bold text-white text-sm">Marketing Transmissions</p>
-                         <p className="text-xs text-gray-500 mt-1">Offers and promotional content</p>
-                       </div>
-                       <label className="relative inline-flex items-center cursor-pointer">
-                         <input type="checkbox" className="sr-only peer" />
-                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-400"></div>
-                       </label>
-                    </div>
-                 </div>
-              </motion.div>
-           </div>
+          </div>
         </div>
-      </motion.div>
-    </DashboardLayout>
+      </div>
+
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ backgroundColor: colors.surface, border: `1px solid ${colors.danger}`, borderRadius: '24px', padding: '32px', maxWidth: '440px', width: '100%', textAlign: 'center' }}>
+            <Trash2 size={48} color={colors.danger} style={{ marginBottom: '20px' }} />
+            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: 'white', marginBottom: '12px' }}>Are you sure?</h2>
+            <p style={{ color: colors.text2, fontSize: '14px', marginBottom: '24px', lineHeight: '1.6' }}>
+              This action will permanently delete your account, wipe all your trading history, and cancel active challenges. You cannot undo this.
+            </p>
+            
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', color: colors.text3, fontSize: '12px', marginBottom: '8px' }}>Type "DELETE" to confirm</label>
+              <input 
+                value={deleteConfirm} 
+                onChange={(e) => setDeleteConfirm(e.target.value)} 
+                placeholder="DELETE"
+                style={{ width: '100%', padding: '12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: '10px', color: 'white', textAlign: 'center', fontWeight: 'bold', letterSpacing: '2px' }} 
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => setShowDeleteModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', color: 'white', border: `1px solid ${colors.border}`, borderRadius: '10px', cursor: 'pointer' }}>Cancel</button>
+              <button 
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirm !== 'DELETE' || submitting}
+                style={{ flex: 1, padding: '12px', backgroundColor: colors.danger, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, opacity: deleteConfirm === 'DELETE' ? 1 : 0.5 }}
+              >
+                {submitting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

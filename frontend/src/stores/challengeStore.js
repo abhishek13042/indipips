@@ -1,56 +1,53 @@
-import { create } from 'zustand';
-import api from '../api';
+import { create } from 'zustand'
+import api from '../api'
 
-const useChallengeStore = create((set, get) => ({
+const useChallengeStore = create((set) => ({
   challenges: [],
   activeChallenge: null,
-  trades: [],
   isLoading: false,
   error: null,
 
   fetchChallenges: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null })
     try {
-      const response = await api.get('/challenges');
-      set({ challenges: response.data.data, isLoading: false });
-    } catch (error) {
-      set({ error: 'Failed to fetch challenges', isLoading: false });
+      const res = await api.get('/challenges')
+      const challenges = res.data.data
+      const active = challenges.find(
+        c => c.status === 'ACTIVE'
+      )
+      set({
+        challenges,
+        activeChallenge: active || null,
+        isLoading: false
+      })
+    } catch (err) {
+      set({
+        error: err.response?.data?.message 
+          || 'Failed to fetch challenges',
+        isLoading: false
+      })
     }
   },
 
-  setActiveChallenge: (challenge) => {
-    set({ activeChallenge: challenge });
-    if (challenge) {
-      get().fetchActiveTrades(challenge.id);
-    }
-  },
-
-  fetchActiveTrades: async (challengeId) => {
+  fetchChallenge: async (id) => {
+    set({ isLoading: true })
     try {
-      const response = await api.get(`/trades/active/${challengeId}`);
-      set({ trades: response.data.data });
-    } catch (error) {
-      console.error('Failed to fetch trades:', error);
+      const res = await api.get(`/challenges/${id}`)
+      set({
+        activeChallenge: res.data.data,
+        isLoading: false
+      })
+      return res.data.data
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
     }
   },
 
-  addTrade: (trade) => {
-    set((state) => ({
-      trades: [trade, ...state.trades]
-    }));
-  },
+  reset: () => set({
+    challenges: [],
+    activeChallenge: null
+  })
+}))
 
-  updateTrade: (tradeId, updates) => {
-    set((state) => ({
-      trades: state.trades.map((t) => (t.id === tradeId ? { ...t, ...updates } : t))
-    }));
-  },
-
-  removeTrade: (tradeId) => {
-    set((state) => ({
-      trades: state.trades.filter((t) => t.id !== tradeId)
-    }));
-  }
-}));
-
-export default useChallengeStore;
+export default useChallengeStore

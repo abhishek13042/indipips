@@ -1,128 +1,391 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Lock, ArrowLeft, KeyRound } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Shield, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react'
 import api from '../api'
 
-function ResetPasswordPage() {
+const colors = {
+  bg: '#060B14',
+  surface: '#0D1420',
+  surface2: '#131D2E',
+  border: '#1E2D40',
+  accent: '#2563EB',
+  accent2: '#1D4ED8',
+  gold: '#F59E0B',
+  success: '#10B981',
+  danger: '#EF4444',
+  text: '#F1F5F9',
+  text2: '#94A3B8',
+  text3: '#475569'
+}
+
+const inputStyle = {
+  width: '100%',
+  height: '48px',
+  background: colors.surface2,
+  border: `1px solid ${colors.border}`,
+  borderRadius: '10px',
+  padding: '0 16px 0 44px',
+  color: colors.text,
+  fontSize: '15px',
+  outline: 'none',
+  fontFamily: "'Inter', sans-serif",
+  transition: 'border-color 0.2s, box-shadow 0.2s'
+}
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '12px',
+  color: colors.text2,
+  fontWeight: '500',
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  marginBottom: '6px'
+}
+
+const ResetPasswordPage = () => {
   const navigate = useNavigate()
-  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token')
   
-  // Extract token from URL /reset-password?token=xxxx
-  const queryParams = new URLSearchParams(location.search)
-  const token = queryParams.get('token')
+  // If no token, redirect
+  if (!token) {
+    navigate('/forgot-password', { replace: true })
+    return null
+  }
 
-  const [password, setPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isSuccess, setIsSuccess] = useState(false)
 
-  const handleSubmit = async (e) => {
+  // Password strength logic
+  const hasUpper = /[A-Z]/.test(newPassword)
+  const hasNumber = /[0-9]/.test(newPassword)
+  const hasSpecial = /[!@#$%^&*]/.test(newPassword)
+  const hasLength = newPassword.length >= 8
+  const strengthScore = [hasUpper, hasNumber, hasSpecial, hasLength].filter(Boolean).length
+
+  const getStrengthWord = () => {
+    if (newPassword.length === 0) return ''
+    if (strengthScore <= 1) return 'Weak'
+    if (strengthScore === 2) return 'Fair'
+    if (strengthScore === 3) return 'Good'
+    return 'Strong'
+  }
+
+  const getBarColor = (index) => {
+    if (index >= strengthScore) return colors.surface2
+    if (strengthScore <= 1) return colors.danger
+    if (strengthScore === 2) return colors.gold
+    if (strengthScore === 3) return '#EAB308' // yellow
+    return colors.success
+  }
+
+  const handleInputFocus = (e, isValid, hasError) => {
+    if (hasError) {
+      e.target.style.borderColor = colors.danger
+      e.target.style.boxShadow = `0 0 0 3px rgba(239,68,68,0.15)`
+    } else if (isValid) {
+      e.target.style.borderColor = colors.success
+      e.target.style.boxShadow = `0 0 0 3px rgba(16,185,129,0.15)`
+    } else {
+      e.target.style.borderColor = colors.accent
+      e.target.style.boxShadow = `0 0 0 3px rgba(37,99,235,0.15)`
+    }
+  }
+
+  const handleInputBlur = (e, isValid, hasError) => {
+    if (hasError) {
+      e.target.style.borderColor = colors.danger
+    } else if (isValid) {
+      e.target.style.borderColor = colors.success
+    } else {
+      e.target.style.borderColor = colors.border
+    }
+    e.target.style.boxShadow = 'none'
+  }
+
+  const handleReset = async (e) => {
     e.preventDefault()
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+    if (!hasLength) {
+      setError('Password must be at least 8 characters')
       return
     }
-    if (!token) {
-      setError('Invalid or missing reset token.')
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match')
       return
     }
 
-    setLoading(true)
+    setIsLoading(true)
     setError('')
-    setMessage('')
     try {
-      const res = await api.post('/auth/reset-password', { token, newPassword: password })
-      setMessage(res.data?.message || 'Password successfully reset.')
-      setTimeout(() => navigate('/login'), 2000)
+      await api.post('/auth/reset-password', { 
+        token,
+        newPassword 
+      })
+      setIsSuccess(true)
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to reset password. Token may be expired.')
+      setError(err.response?.data?.message || err.message || 'Failed to reset password. The link might be expired.')
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-black text-gray-200 flex flex-col justify-center items-center p-6 relative overflow-hidden font-inter">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-400/10 rounded-full blur-[150px] pointer-events-none"></div>
+    <div style={{
+      minHeight: '100vh',
+      width: '100%',
+      backgroundColor: colors.bg,
+      backgroundImage: 'radial-gradient(ellipse at center, rgba(37,99,235,0.08) 0%, transparent 70%)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '40px 24px',
+      fontFamily: "'Inter', sans-serif"
+    }}>
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes popIn {
+          0% { transform: scale(0.8); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .error-banner {
+          animation: slideDown 0.2s ease;
+        }
+        .spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+        .success-icon {
+          animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+      `}</style>
 
-      <button 
-        onClick={() => navigate('/login')}
-        className="absolute top-8 left-8 flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-      >
-        <ArrowLeft size={18} /> Back to Login
-      </button>
+      {/* Main Card */}
+      <div style={{
+        width: '100%',
+        maxWidth: '420px',
+        backgroundColor: colors.surface,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '16px',
+        padding: '40px',
+        boxShadow: '0 25px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)'
+      }}>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-[420px] relative z-10"
-      >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-900 to-green-500/20 border border-green-400/20 mx-auto flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(74,222,128,0.15)]">
-            <KeyRound className="text-white" size={32} />
-          </div>
-          <h1 className="text-3xl font-black text-white font-outfit tracking-tight">Set New Security Key</h1>
-          <p className="text-gray-400 font-medium mt-2">Enter your new master password.</p>
-        </div>
-
-        <div className="glass-dark border border-gray-800 rounded-3xl p-8 shadow-2xl relative">
-          
-          {error && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-bold text-center">
-              {error}
-            </motion.div>
-          )}
-
-          {message && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-bold text-center">
-              {message}
-            </motion.div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">New Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full bg-black border border-gray-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:border-green-400 transition-colors"
-                  placeholder="Min 8 characters"
-                />
-              </div>
+        {isSuccess ? (
+          <div style={{ textAlign: 'center' }}>
+            <div className="success-icon" style={{ 
+              width: '64px', height: '64px', borderRadius: '16px', 
+              backgroundColor: 'rgba(16,185,129,0.1)', display: 'flex', 
+              alignItems: 'center', justifyContent: 'center', 
+              margin: '0 auto 24px auto',
+              border: `1px solid rgba(16,185,129,0.2)`
+            }}>
+              <CheckCircle size={32} color={colors.success} />
             </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Confirm Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full bg-black border border-gray-800 rounded-xl py-3 pl-12 pr-4 text-white focus:outline-none focus:border-green-400 transition-colors"
-                  placeholder="Repeat new password"
-                />
-              </div>
-            </div>
+            
+            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Password updated successfully!</h2>
+            <p style={{ color: colors.text2, fontSize: '14px', lineHeight: '1.5', marginBottom: '32px' }}>
+              Your account is now secure. Please sign in with your new password.
+            </p>
 
             <button
-              type="submit"
-              disabled={loading || Boolean(message) || !token}
-              className="w-full py-4 rounded-xl bg-green-400 text-black font-black text-sm flex justify-center items-center gap-2 hover:bg-green-300 transition-colors shadow-[0_0_20px_rgba(74,222,128,0.2)] mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => navigate('/login')}
+              style={{
+                width: '100%',
+                height: '48px',
+                backgroundColor: colors.accent,
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = colors.accent2
+                e.target.style.transform = 'translateY(-1px)'
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = colors.accent
+                e.target.style.transform = 'translateY(0)'
+              }}
             >
-              {loading ? <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : 'SECURE NODE & LOGIN'}
+              Go to Login →
             </button>
-          </form>
-        </div>
-      </motion.div>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+              <div style={{ 
+                width: '64px', height: '64px', borderRadius: '16px', 
+                backgroundColor: 'rgba(16,185,129,0.1)', display: 'flex', 
+                alignItems: 'center', justifyContent: 'center', 
+                margin: '0 auto 24px auto',
+                border: `1px solid rgba(16,185,129,0.2)`
+              }}>
+                <Shield size={32} color={colors.success} />
+              </div>
+
+              <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Reset your password</h2>
+              <p style={{ color: colors.text2, fontSize: '14px' }}>Enter your new password below</p>
+            </div>
+
+            {error && (
+              <div className="error-banner" style={{
+                backgroundColor: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderLeft: `3px solid ${colors.danger}`,
+                borderRadius: '8px',
+                padding: '12px 16px',
+                color: '#FCA5A5',
+                fontSize: '14px',
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>⚠️</span>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleReset}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>New Password</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: '14px', top: '15px', color: colors.text3 }} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ ...inputStyle, paddingRight: '44px' }}
+                    onFocus={(e) => handleInputFocus(e, false, !!error)}
+                    onBlur={(e) => handleInputBlur(e, false, !!error)}
+                  />
+                  <div 
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ position: 'absolute', right: '14px', top: '15px', cursor: 'pointer', color: colors.text3 }}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </div>
+                </div>
+
+                {newPassword && (
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} style={{ 
+                          height: '4px', flex: 1, borderRadius: '2px', 
+                          backgroundColor: getBarColor(i), transition: 'background-color 0.3s'
+                        }}></div>
+                      ))}
+                      <span style={{ fontSize: '11px', color: getBarColor(strengthScore), marginLeft: '8px', minWidth: '40px' }}>
+                        {getStrengthWord()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ color: hasLength ? colors.success : colors.danger }}>{hasLength ? '✓' : '✗'} At least 8 characters</div>
+                      <div style={{ color: hasUpper ? colors.success : colors.danger }}>{hasUpper ? '✓' : '✗'} One uppercase letter</div>
+                      <div style={{ color: hasNumber ? colors.success : colors.danger }}>{hasNumber ? '✓' : '✗'} One number</div>
+                      <div style={{ color: hasSpecial ? colors.success : colors.danger }}>{hasSpecial ? '✓' : '✗'} One special character</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={labelStyle}>Confirm Password</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: '14px', top: '15px', color: colors.text3 }} />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={{ 
+                      ...inputStyle, paddingRight: '44px',
+                      borderColor: (confirmPassword && newPassword === confirmPassword) ? colors.success : colors.border
+                    }}
+                    onFocus={(e) => handleInputFocus(e, confirmPassword && newPassword === confirmPassword, false)}
+                    onBlur={(e) => handleInputBlur(e, confirmPassword && newPassword === confirmPassword, false)}
+                  />
+                  <div 
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    style={{ position: 'absolute', right: '14px', top: '15px', cursor: 'pointer', color: colors.text3 }}
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !hasLength || newPassword !== confirmPassword}
+                style={{
+                  width: '100%',
+                  height: '48px',
+                  backgroundColor: colors.accent,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: (isLoading || !hasLength || newPassword !== confirmPassword) ? 'not-allowed' : 'pointer',
+                  opacity: (isLoading || !hasLength || newPassword !== confirmPassword) ? 0.8 : 1,
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading && hasLength && newPassword === confirmPassword) {
+                    e.target.style.backgroundColor = colors.accent2
+                    e.target.style.transform = 'translateY(-1px)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoading) {
+                    e.target.style.backgroundColor = colors.accent
+                    e.target.style.transform = 'translateY(0)'
+                  }
+                }}
+              >
+                {isLoading ? <><div className="spinner"></div> Setting...</> : 'Set New Password'}
+              </button>
+
+              {error && error.includes('expired') && (
+                <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                  <span 
+                    onClick={() => navigate('/forgot-password')}
+                    style={{ color: colors.accent, fontSize: '14px', cursor: 'pointer' }}
+                  >
+                    Request a new link →
+                  </span>
+                </div>
+              )}
+            </form>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
